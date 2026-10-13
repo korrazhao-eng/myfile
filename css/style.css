@@ -1,0 +1,358 @@
+/* 健身器械助手 V1.0 · M1 识别链路
+   视觉基准：附录A 灰度线框规范（白底 / 浅灰卡片+边框 / 深灰主按钮 / 胶囊标签） */
+
+:root{
+  --bg:#f6f6f6;
+  --card:#ffffff;
+  --line:#e3e3e3;
+  --ink:#1a1a1a;
+  --ink2:#666666;
+  --ink3:#9a9a9a;
+  --ink4:#bdbdbd;
+  --btn-dark:#3a3a3a;
+  --danger:#d0342c;
+  --radius:12px;
+  --tabbar-h:64px;
+}
+
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{
+  background:#e9e9e9;
+  font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",Arial,sans-serif;
+  color:var(--ink);
+  display:flex;justify-content:center;align-items:center;
+  min-height:100vh;
+}
+button{font-family:inherit;cursor:pointer}
+input{font-family:inherit}
+
+/* ===== 手机外壳 390×844 ===== */
+#phone{
+  position:relative;
+  width:390px;
+  height:min(844px, calc(100vh - 24px));
+  background:var(--bg);
+  overflow:hidden;
+  border:1px solid #cfcfcf;
+  border-radius:24px;
+  box-shadow:0 12px 40px rgba(0,0,0,.14);
+}
+@media (max-width:500px){
+  body{background:var(--bg)}
+  #phone{width:100vw;height:100dvh;border:none;border-radius:0;box-shadow:none}
+}
+
+/* ===== 页面容器 ===== */
+.page{position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;display:none;flex-direction:column;background:var(--bg)}
+.page.active{display:flex}
+.tab-page{padding-bottom:calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 8px)}
+
+/* 二级页：右滑入，覆盖 Tab 页与 Tab 栏 */
+.sub-page{
+  display:flex;transform:translateX(100%);visibility:hidden;pointer-events:none;
+  transition:transform .25s ease,visibility .25s;
+  z-index:5;padding-bottom:calc(24px + env(safe-area-inset-bottom));
+}
+.sub-page.active{transform:none;visibility:visible;pointer-events:auto}
+
+/* ===== 顶栏 ===== */
+.hd{display:flex;align-items:center;gap:6px;padding:16px 16px 10px;position:sticky;top:0;background:var(--bg);z-index:2}
+.hd h1{font-size:18px;font-weight:700}
+.hd-note{margin-left:auto;font-size:11px;color:var(--ink4)}
+.back{width:30px;height:30px;border:none;background:none;color:var(--ink);display:flex;align-items:center;justify-content:center;margin-left:-6px}
+
+/* ===== 分区标题 + 右侧灰色小注 ===== */
+.sec{display:flex;align-items:baseline;margin:18px 16px 8px}
+.sec h2{font-size:15px;font-weight:700}
+.sec .note{margin-left:auto;font-size:11px;color:var(--ink4)}
+
+/* ===== 卡片 ===== */
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);margin:0 16px 10px;padding:14px}
+.empty-card{color:var(--ink3);font-size:13px;text-align:center;padding:28px 12px}
+
+/* ===== 识别 Tab：取景框 + 提示 ===== */
+.viewfinder{
+  position:relative;margin:8px 16px;aspect-ratio:1/1;
+  background:#efefef;border:1px solid var(--line);border-radius:12px;
+  display:flex;align-items:center;justify-content:center;
+  color:var(--ink3);font-size:14px;
+}
+.viewfinder.slim{aspect-ratio:auto;min-height:280px}
+.viewfinder.clickable{cursor:pointer}
+.viewfinder.clickable:active{background:#e8e8e8}
+.vf-corner{position:absolute;width:26px;height:26px;border:2px solid #9a9a9a}
+.vf-corner.tl{top:14px;left:14px;border-right:none;border-bottom:none}
+.vf-corner.tr{top:14px;right:14px;border-left:none;border-bottom:none}
+.vf-corner.bl{bottom:14px;left:14px;border-right:none;border-top:none}
+.vf-corner.br{bottom:14px;right:14px;border-left:none;border-top:none}
+.tip-line{text-align:center;color:var(--ink3);font-size:13px;margin-top:12px}
+
+/* 照片预览（拍照识别页） */
+.photo-holder{display:block;width:100%;text-align:center}
+.photo-holder img{max-width:82%;max-height:240px;border-radius:8px;display:block;margin:0 auto}
+
+/* ===== 相机悬浮按钮：56×56，识别 Tab 唯一入口 ===== */
+.fab-cam{
+  position:absolute;left:50%;transform:translateX(-50%);
+  bottom:calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 16px);
+  width:56px;height:56px;border-radius:50%;border:none;
+  background:var(--btn-dark);color:#fff;
+  display:none;align-items:center;justify-content:center;
+  box-shadow:0 4px 14px rgba(0,0,0,.22);z-index:6;
+}
+.fab-cam:active{transform:translateX(-50%) scale(.94)}
+body[data-tab="identify"]:not(.sub-open) .fab-cam{display:flex}
+
+/* ===== 底部导航 ===== */
+#tabbar{
+  position:absolute;left:0;right:0;bottom:0;z-index:20;
+  height:calc(var(--tabbar-h) + env(safe-area-inset-bottom));
+  padding-bottom:env(safe-area-inset-bottom);
+  background:#fff;border-top:1px solid var(--line);
+  display:flex;
+}
+body.sub-open #tabbar{display:none}
+.tab{
+  flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+  border:none;background:none;color:var(--ink3);font-size:11px;padding:0;
+}
+.tab .pill{display:flex;align-items:center;justify-content:center;padding:3px 16px;border-radius:10px}
+.tab.active{color:var(--ink);font-weight:600}
+.tab.active .pill{background:#ececec}
+.tab .fl{display:none}
+.tab.active .fl{display:initial}
+.tab.active .st{display:none}
+
+/* ===== 拍照识别页 ===== */
+.hint-bar{
+  margin:6px 16px 12px;padding:10px 12px;
+  background:#efefef;border:1px solid var(--line);border-radius:10px;
+  font-size:13px;color:var(--ink2);
+}
+.cand{
+  display:flex;align-items:center;gap:10px;
+  margin:0 16px 10px;padding:10px 12px;
+  background:var(--card);border:1px solid var(--line);border-radius:10px;
+}
+.cand .thumb{
+  width:46px;height:46px;flex:none;background:#efefef;border-radius:6px;
+  display:flex;align-items:center;justify-content:center;color:#b5b5b5;
+}
+.cand .t{font-size:14px;font-weight:600}
+.cand .s{font-size:12px;color:var(--ink3);margin-top:3px}
+.btn-lite{
+  margin-left:auto;flex:none;
+  border:1px solid #c9c9c9;background:#fff;color:var(--ink);
+  font-size:13px;padding:8px 14px;border-radius:8px;
+}
+.btn-lite:active{background:#f0f0f0}
+
+/* 兜底手动选择 */
+.fall-card{margin-top:14px;padding:12px 14px 14px}
+.fall-head{
+  width:100%;display:flex;align-items:center;gap:2px;
+  border:none;background:none;font-size:14px;color:var(--ink2);padding:2px 0 10px;
+}
+.fall-head b{color:var(--ink);font-weight:600}
+.fall-head .arrow{margin-left:auto;color:var(--ink4);font-size:13px;transition:transform .2s}
+.fall-head.collapsed .arrow{transform:rotate(-90deg)}
+.fall-card.collapsed #fallback-body{display:none}
+.fall-search{margin-bottom:10px}
+.fall-search input{
+  width:100%;padding:11px 12px;font-size:14px;
+  border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink);outline:none;
+}
+.fall-search input::placeholder{color:var(--ink4)}
+.fall-search input:focus{border-color:#b5b5b5}
+.fgroup h3{font-size:13px;font-weight:600;color:var(--ink2);margin:12px 2px 8px}
+.fitem{
+  display:flex;align-items:center;gap:8px;
+  padding:12px;margin-bottom:8px;
+  background:var(--card);border:1px solid var(--line);border-radius:10px;
+  font-size:14px;
+}
+.fitem:active{background:#f4f4f4}
+.fitem.selected{border-color:var(--btn-dark);background:#f4f4f4}
+.fitem .mark{
+  margin-left:auto;flex:none;display:none;
+  font-size:11px;color:#fff;background:var(--btn-dark);
+  border-radius:4px;padding:3px 7px;
+}
+.fitem.selected .mark{display:inline-block}
+.empty-tip{text-align:center;color:var(--ink3);font-size:13px;padding:26px 0 14px}
+
+/* ===== 器械详情页 ===== */
+.video-test{margin:10px 16px;background:#efefef;border:1px solid var(--line);border-radius:12px;padding:12px}
+.video-cap{font-size:13px;font-weight:700;margin-bottom:8px}
+.video-note{font-size:11px;font-weight:400;color:var(--ink3)}
+.video-player{width:100%;display:block;background:#000;border-radius:8px;aspect-ratio:16/9}
+.btn-video{
+  display:flex;align-items:center;justify-content:center;margin-top:8px;
+  border:1px solid #c9c9c9;background:#fff;color:var(--ink);
+  font-size:14px;border-radius:8px;text-decoration:none;padding:12px 10px;
+}
+.btn-video:active{background:#f0f0f0}
+.detail-cap{margin:18px 16px 6px;font-size:12px;color:var(--ink4)}
+.detail-name{margin:0 16px;font-size:21px;font-weight:700}
+.cap-row{display:flex;align-items:center;gap:8px;margin:12px 16px}
+.cap-label{font-size:13px;color:var(--ink2)}
+.capsule{border:1px solid #cfcfcf;background:#fff;border-radius:999px;padding:4px 13px;font-size:12px;color:var(--ink2)}
+.warn-card{margin:16px 16px 10px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.warn-cap{font-size:11px;color:var(--ink4);margin-bottom:8px}
+.warn-line{color:var(--danger);font-size:14px;font-weight:600;display:flex;align-items:center;gap:6px}
+
+/* ===== Toast ===== */
+#toast{
+  position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);
+  background:rgba(20,20,20,.86);color:#fff;
+  padding:12px 18px;border-radius:10px;
+  display:flex;gap:9px;align-items:center;font-size:14px;z-index:50;
+  white-space:nowrap;
+}
+.spinner{
+  width:15px;height:15px;flex:none;border-radius:50%;
+  border:2px solid rgba(255,255,255,.35);border-top-color:#fff;
+  animation:spin .8s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.hidden{display:none!important}
+
+/* ===== M2 · 通用 ===== */
+.sec-in{display:flex;align-items:baseline;margin-bottom:10px}
+.sec-in h2{font-size:15px;font-weight:700}
+.sec-in .note{margin-left:auto;font-size:11px;color:var(--ink4)}
+.btn-primary{
+  width:100%;border:none;background:var(--btn-dark);color:#fff;
+  font-size:15px;font-weight:600;padding:14px;border-radius:12px;
+}
+.btn-primary:active{opacity:.85}
+.btn-primary[disabled]{opacity:.45}
+.bottom-bar{
+  position:sticky;bottom:0;z-index:3;margin-top:14px;
+  padding:10px 16px calc(14px + env(safe-area-inset-bottom));
+  background:linear-gradient(to top, var(--bg) 70%, rgba(246,246,246,0));
+}
+.progress-row{display:flex;align-items:baseline;margin:10px 0 8px}
+.progress-label{font-size:12px;color:var(--ink3)}
+.progress-num{margin-left:auto;font-size:14px;font-weight:700}
+.progress-track{height:8px;background:#e8e8e8;border-radius:99px;overflow:hidden}
+.progress-fill{height:100%;background:var(--btn-dark);border-radius:99px;transition:width .3s}
+.plan-sub{font-size:12px;color:var(--ink3);margin-bottom:4px}
+.teach-link{margin-left:auto;flex:none;color:#4a6cf5;font-size:12px;background:none;border:none;padding:2px}
+.teach-link:active{opacity:.6}
+
+/* ===== 首页 · 今日训练主卡 ===== */
+.home-plan-title{font-size:16px;font-weight:700;margin-bottom:4px}
+.home-plan .btn-primary{margin-top:14px}
+
+/* ===== 今日方案页 ===== */
+.part-grid{display:flex;flex-direction:column;gap:8px}
+.part-item{border:1px solid var(--line);background:#fff;border-radius:10px;padding:11px 12px;display:flex;flex-direction:row;align-items:center;gap:12px}
+.part-item .pic{width:34px;height:34px;flex:none;border-radius:8px;background:#efefef;display:flex;align-items:center;justify-content:center;color:#b5b5b5}
+.part-item .lb{font-size:14px;color:var(--ink2)}
+.part-item.selected{border:2px solid var(--btn-dark);padding:10px 11px}
+.part-item.selected .lb{color:var(--ink);font-weight:600}
+.picked-line{margin-top:12px;font-size:13px;color:var(--ink2)}
+.picked-line b{color:var(--ink)}
+
+/* ===== 方案执行页 ===== */
+.exec-list-finished .set-chip{pointer-events:none;opacity:.55}
+/* 热身卡与动作卡共用同一骨架（.action-row），内容区分别为要点列表 / 勾选 chips */
+.action-row{background:#f4f4f4;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:8px 0}
+.warmup-pts{margin:6px 0 2px 16px;font-size:12px;color:var(--ink2);line-height:1.8}
+.action-head{display:flex;align-items:flex-start;gap:8px}
+.action-name{font-size:14px;font-weight:700}
+.action-meta{font-size:12px;color:var(--ink3);margin-top:2px}
+.action-done{margin-left:auto;flex:none;font-size:11px;color:var(--ink3);padding-top:2px}
+.set-chips{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 4px}
+.set-chip{border:1px solid #c9c9c9;background:#fff;color:var(--ink2);border-radius:8px;font-size:12px;padding:7px 12px}
+.set-chip.checked{background:var(--btn-dark);color:#fff;border-color:var(--btn-dark)}
+/* 执行页底部按钮：随页面滚动（不悬浮），重新选择 + 完成训练 */
+.exec-bar{display:flex;gap:10px;margin:14px 16px calc(20px + env(safe-area-inset-bottom))}
+.btn-secondary{flex:1;border:1px solid #c9c9c9;background:#fff;color:var(--ink);border-radius:10px;padding:12px;font-size:15px}
+.btn-secondary:active{background:#f0f0f0}
+.exec-bar .btn-primary{width:auto;flex:1}
+
+/* ===== 方案页教练引导：蓝字，M3 接预约留资页 ===== */
+.coach-line{display:block;margin:0 16px 10px;padding:0;border:none;background:none;color:#4a6cf5;font-size:13px;text-align:left;cursor:pointer}
+.coach-line:active{opacity:.7}
+
+/* ===== M3 · 预约留资页 ===== */
+/* 教练卡片（首页引导态与预约页共用）：竖排卡=头像占位区+姓名+标签胶囊组，两卡并排 */
+.reserve-tip{font-size:12px;color:var(--ink3);margin:2px 0 8px}
+.resv-cards{display:flex;gap:10px}
+#home-reserve-area > .resv-cards{margin:0 16px}
+.coach-card{flex:1;min-width:0;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:10px;text-align:left;cursor:pointer;display:flex;flex-direction:column}
+.coach-card:active{background:#f6f6f6}
+.coach-card.selected{border-color:var(--btn-dark);border-width:2px;padding:9px}
+.cc-photo{margin-bottom:8px}
+.cc-name{font-size:15px;font-weight:700;margin-bottom:7px}
+.cc-tags{display:flex;flex-wrap:wrap;gap:5px}
+.tag{font-size:11px;color:var(--ink2);background:#efefef;border-radius:999px;padding:3px 8px}
+
+/* ===== M3 · 首页今日预约卡（有教练课态） ===== */
+.resv-row{display:flex;align-items:flex-start;gap:10px}
+.resv-main{flex:1;min-width:0}
+.resv-course{font-size:14px;font-weight:700}
+.resv-time{font-size:12px;color:var(--ink3);margin-top:3px}
+.stars{display:flex;gap:2px;flex:none}
+.star{border:none;background:none;font-size:20px;line-height:1;color:#d5d5d5;padding:0 1px}
+.star.on{color:var(--btn-dark)}
+.rate-due .star{color:#d5d5d5;animation:pulse 1.2s ease-in-out infinite}
+@keyframes pulse{50%{color:#8a8a8a}}
+.rate-done{flex:none;font-size:12px;color:var(--ink3);padding-top:3px}
+
+/* ===== M3 · 训练日志页（月视图日历） ===== */
+.cal-card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);margin:0 16px 10px;padding:12px}
+.cal-head{display:flex;align-items:center;margin-bottom:8px}
+.cal-title{flex:1;text-align:center;font-size:15px;font-weight:700}
+.cal-nav{width:32px;height:32px;border:1px solid #c9c9c9;background:#fff;border-radius:8px;font-size:18px;line-height:1;color:var(--ink)}
+.cal-nav:active{background:#f0f0f0}
+.cal-week{display:grid;grid-template-columns:repeat(7,1fr);text-align:center;font-size:11px;color:var(--ink3);margin-bottom:4px}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
+.cal-cell{min-height:44px;display:flex;flex-direction:column;align-items:center;padding-top:4px;border-radius:6px}
+.cal-day{font-size:14px;color:var(--ink2);line-height:22px;width:22px;text-align:center;border-radius:50%}
+.cal-cell.today .cal-day{background:var(--btn-dark);color:#fff}
+.cal-marks{display:flex;gap:1px;margin-top:2px;height:14px;color:var(--ink)}
+.cal-marks svg{width:13px;height:13px}
+.cal-legend{display:flex;justify-content:center;gap:16px;margin:0 16px;font-size:11px;color:var(--ink2)}
+.cal-legend svg{width:13px;height:13px;vertical-align:-2px}
+
+/* ===== M3 · 我的页面（个人资料卡 + 四宫格记录入口） ===== */
+.me-card{margin:0 16px 12px;padding:14px;border-radius:var(--radius);border:1px solid var(--line);background:var(--card);display:flex;align-items:center;gap:14px}
+.cc-photo,.me-avatar{display:flex;align-items:center;justify-content:center;aspect-ratio:1;border-radius:4px;font-size:12px;color:var(--ink4);background:linear-gradient(to top right,transparent calc(50% - .5px),#d9d9d9,transparent calc(50% + .5px)),linear-gradient(to bottom right,transparent calc(50% - .5px),#d9d9d9,transparent calc(50% + .5px)),#f7f7f7}
+.me-avatar{position:relative;width:56px;flex:none;margin-bottom:0}
+.me-cam{position:absolute;right:-5px;bottom:-5px;width:18px;height:18px;border-radius:50%;background:var(--btn-dark);color:#fff;display:flex;align-items:center;justify-content:center;font-style:normal}
+.me-info{display:flex;flex-direction:column;gap:5px}
+.me-id{font-size:17px;font-weight:700;display:flex;align-items:center;gap:6px;color:var(--ink)}
+.me-id svg{color:var(--ink3)}
+.me-phone{font-size:12px;color:var(--ink3)}
+.me-grid{display:flex;margin:0 16px;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px 4px}
+.me-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background:none;border:none;font-size:12px;color:var(--ink)}
+.me-ico{display:flex;align-items:center;justify-content:center;color:var(--ink2)}
+.me-ico svg{display:block}
+.me-item:active{opacity:.7}
+
+/* ===== 完成弹层 ===== */
+.modal{position:absolute;inset:0;z-index:40;display:flex;align-items:center;justify-content:center}
+.modal-mask{position:absolute;inset:0;background:rgba(0,0,0,.45)}
+.modal-card{
+  position:relative;width:300px;background:#fff;border-radius:16px;
+  padding:22px 18px 18px;text-align:center;
+  display:flex;flex-direction:column;align-items:center;
+}
+.modal-close{
+  position:absolute;top:10px;right:10px;width:28px;height:28px;
+  border:none;border-radius:50%;background:#efefef;color:var(--ink2);
+  display:flex;align-items:center;justify-content:center;
+}
+.celebrate{
+  width:150px;height:150px;border:2px dashed #cfcfcf;border-radius:14px;
+  background:#f6f6f6;color:#b5b5b5;
+  display:flex;align-items:center;justify-content:center;
+}
+.modal-title{font-size:18px;font-weight:700;margin-top:16px}
+.modal-sub{font-size:13px;color:var(--ink2);margin-top:8px;line-height:1.6}
+.modal-btn{margin-top:16px;display:flex;align-items:center;justify-content:center;gap:7px}
