@@ -39,8 +39,10 @@ input{font-family:inherit}
   box-shadow:0 12px 40px rgba(0,0,0,.14);
 }
 @media (max-width:500px){
-  body{background:var(--bg)}
-  #phone{width:100vw;height:100dvh;border:none;border-radius:0;box-shadow:none}
+  /* 窄窗口（<500px）：手机壳保持 390 设计宽，由 app.js fitPhone() 按窗口宽等比缩放（scale），
+     布局不挤压不变形；body 隐藏横向溢出（390 壳在 flex 居中下的布局溢出） */
+  body{background:var(--bg);overflow-x:hidden}
+  #phone{border:none;border-radius:0;box-shadow:none}
 }
 
 /* ===== 页面容器 ===== */
@@ -124,29 +126,41 @@ body.sub-open #tabbar{display:none}
 .tab.active .fl{display:initial}
 .tab.active .st{display:none}
 
+/* ===== 识别 Tab 双子 Tab（V1.1：拍照识别 / 列表） ===== */
+.subtabs{display:flex;gap:8px;margin:2px 16px 10px}
+.subtab{flex:1;border:1px solid var(--line);background:#fff;color:var(--ink2);font-size:14px;padding:9px 0;border-radius:10px}
+.subtab.active{background:var(--btn-dark);border-color:var(--btn-dark);color:#fff;font-weight:600}
+#id-pane-list .fall-search{margin:0 16px 10px}
+
 /* ===== 拍照识别页 ===== */
 .hint-bar{
   margin:6px 16px 12px;padding:10px 12px;
   background:#efefef;border:1px solid var(--line);border-radius:10px;
   font-size:13px;color:var(--ink2);
 }
-.cand{
-  display:flex;align-items:center;gap:10px;
-  margin:0 16px 10px;padding:10px 12px;
-  background:var(--card);border:1px solid var(--line);border-radius:10px;
+
+/* 候选侧滑大卡（V1.1）：一次一张、左右滑动切换 */
+.swipe-wrap{margin:0 16px;touch-action:pan-y;user-select:none;-webkit-user-select:none}
+.swipe-track{display:flex;transition:transform .25s ease}
+.cand-card{
+  flex:0 0 100%;min-width:0;position:relative;
+  background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+  padding:14px;display:flex;flex-direction:column;align-items:center;
 }
-.cand .thumb{
-  width:46px;height:46px;flex:none;background:#efefef;border-radius:6px;
-  display:flex;align-items:center;justify-content:center;color:#b5b5b5;
+.cand-img{
+  width:100%;aspect-ratio:4/3;border-radius:8px;font-size:13px;color:var(--ink4);
+  display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(to top right,transparent calc(50% - .5px),#d9d9d9,transparent calc(50% + .5px)),linear-gradient(to bottom right,transparent calc(50% - .5px),#d9d9d9,transparent calc(50% + .5px)),#f7f7f7;
 }
-.cand .t{font-size:14px;font-weight:600}
-.cand .s{font-size:12px;color:var(--ink3);margin-top:3px}
-.btn-lite{
-  margin-left:auto;flex:none;
-  border:1px solid #c9c9c9;background:#fff;color:var(--ink);
-  font-size:13px;padding:8px 14px;border-radius:8px;
-}
-.btn-lite:active{background:#f0f0f0}
+.cand-badge{position:absolute;top:22px;right:22px;font-size:11px;color:#fff;background:var(--btn-dark);border-radius:999px;padding:3px 9px}
+.cand-name{font-size:17px;font-weight:700;margin-top:12px}
+.cand-caps{display:flex;gap:6px;margin-top:8px}
+.cand-card .btn-primary{margin-top:14px;padding:12px}
+.swipe-ind{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:10px}
+.swipe-dots{display:flex;gap:5px}
+.dot{width:6px;height:6px;border-radius:50%;background:#d5d5d5}
+.dot.on{background:var(--btn-dark)}
+.swipe-label{font-size:11px;color:var(--ink3)}
 
 /* 兜底手动选择 */
 .fall-card{margin-top:14px;padding:12px 14px 14px}
@@ -258,22 +272,25 @@ body.sub-open #tabbar{display:none}
 .picked-line b{color:var(--ink)}
 
 /* ===== 方案执行页 ===== */
-.exec-list-finished .set-chip{pointer-events:none;opacity:.55}
-/* 热身卡与动作卡共用同一骨架（.action-row），内容区分别为要点列表 / 勾选 chips */
+/* 热身卡与动作卡共用同一骨架（.action-row），完成态整卡置灰 */
 .action-row{background:#f4f4f4;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:8px 0}
+.action-row.done{background:#ececec}
+.action-row.done .action-name{color:var(--ink2)}
 .warmup-pts{margin:6px 0 2px 16px;font-size:12px;color:var(--ink2);line-height:1.8}
 .action-head{display:flex;align-items:flex-start;gap:8px}
 .action-name{font-size:14px;font-weight:700}
 .action-meta{font-size:12px;color:var(--ink3);margin-top:2px}
-.action-done{margin-left:auto;flex:none;font-size:11px;color:var(--ink3);padding-top:2px}
-.set-chips{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 4px}
-.set-chip{border:1px solid #c9c9c9;background:#fff;color:var(--ink2);border-radius:8px;font-size:12px;padding:7px 12px}
-.set-chip.checked{background:var(--btn-dark);color:#fff;border-color:var(--btn-dark)}
-/* 执行页底部按钮：随页面滚动（不悬浮），重新选择 + 完成训练 */
+.act-foot{display:flex;align-items:center;gap:10px;margin-top:10px}
+.act-foot .btn-act{margin-left:auto}
+.act-check{font-size:12px;font-weight:600;color:var(--ink2)}
+.rec-line{margin-left:auto;font-size:12px;color:var(--ink3)}
+.btn-act{flex:none;border:none;background:var(--btn-dark);color:#fff;font-size:13px;font-weight:600;padding:8px 18px;border-radius:8px}
+.btn-act:active{opacity:.85}
+.btn-act.lite{border:1px solid #c9c9c9;background:#fff;color:var(--ink);font-weight:400}
+/* 执行页底部按钮：随页面滚动（不悬浮），仅保留「重新选择」 */
 .exec-bar{display:flex;gap:10px;margin:14px 16px calc(20px + env(safe-area-inset-bottom))}
 .btn-secondary{flex:1;border:1px solid #c9c9c9;background:#fff;color:var(--ink);border-radius:10px;padding:12px;font-size:15px}
 .btn-secondary:active{background:#f0f0f0}
-.exec-bar .btn-primary{width:auto;flex:1}
 
 /* ===== 方案页教练引导：蓝字，M3 接预约留资页 ===== */
 .coach-line{display:block;margin:0 16px 10px;padding:0;border:none;background:none;color:#4a6cf5;font-size:13px;text-align:left;cursor:pointer}
@@ -319,6 +336,21 @@ body.sub-open #tabbar{display:none}
 .cal-marks svg{width:13px;height:13px}
 .cal-legend{display:flex;justify-content:center;gap:16px;margin:0 16px;font-size:11px;color:var(--ink2)}
 .cal-legend svg{width:13px;height:13px;vertical-align:-2px}
+.cal-cell{cursor:pointer}
+.cal-cell.sel{background:#ececec}
+
+/* 当日详情（V1.1）：点日期在日历下方展开；自由训练明细 / 教练信息卡 / 该日休息 */
+.day-detail{margin:2px 16px 12px}
+.day-date{font-size:12px;color:var(--ink3);margin:0 2px 8px}
+.day-card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px;margin-bottom:10px}
+.day-card.rest{color:var(--ink3);font-size:13px;text-align:center}
+.day-cap{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;margin-bottom:8px}
+.day-cap svg{width:14px;height:14px}
+.day-row{font-size:14px;padding:8px 0;border-top:1px solid #f0f0f0}
+.day-row:first-of-type{border-top:none}
+.day-detail .coach-card{cursor:default}
+.day-detail .cc-photo{width:120px}
+.dd-course{font-size:12px;color:var(--ink3);margin-bottom:7px}
 
 /* ===== M3 · 我的页面（个人资料卡 + 四宫格记录入口） ===== */
 .me-card{margin:0 16px 12px;padding:14px;border-radius:var(--radius);border:1px solid var(--line);background:var(--card);display:flex;align-items:center;gap:14px}
@@ -356,3 +388,34 @@ body.sub-open #tabbar{display:none}
 .modal-title{font-size:18px;font-weight:700;margin-top:16px}
 .modal-sub{font-size:13px;color:var(--ink2);margin-top:8px;line-height:1.6}
 .modal-btn{margin-top:16px;display:flex;align-items:center;justify-content:center;gap:7px}
+
+/* ===== 组次重量录入弹层（V1.1） ===== */
+.rec-title{font-size:16px;font-weight:700;text-align:left}
+.rec-fields{display:flex;flex-direction:column;gap:10px;margin:14px 0 16px;text-align:left}
+.rec-fields label{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--ink2)}
+.rec-fields input{
+  flex:1;min-width:0;padding:10px 12px;font-size:14px;color:var(--ink);
+  border:1px solid var(--line);border-radius:10px;background:#fff;outline:none;
+}
+.rec-fields input:focus{border-color:#b5b5b5}
+
+/* ===== V1.2 · 首页「最近运动」摘要卡（REQ-2026-0061，纯展示不可点击） ===== */
+.sum-head{display:flex;align-items:center}
+.sum-title{font-size:16px;font-weight:700}
+.sum-badge{margin-left:auto;flex:none;font-size:11px;color:#fff;background:var(--btn-dark);border-radius:999px;padding:3px 9px}
+.sum-empty{color:var(--ink3);font-size:13px;line-height:1.6;padding:8px 0 2px}
+.sum-cap{font-size:11px;color:var(--ink4);margin-top:12px}
+.sum-list{margin-top:2px}
+.sum-row{padding:9px 0}
+.sum-row + .sum-row{border-top:1px solid #f0f0f0}
+.sum-row-head{display:flex;align-items:center;gap:8px}
+.sum-pill{flex:none;font-size:11px;line-height:1.5;border-radius:999px;padding:2px 9px}
+.sum-pill.s-prog{border:1px solid #b5b5b5;background:#fff;color:var(--ink2);padding:1px 8px}
+.sum-pill.s-stall{background:#8a8a8a;color:#fff}
+.sum-pill.s-reg{background:var(--btn-dark);color:#fff}
+.sum-pill.s-first{background:#efefef;color:var(--ink2)}
+.sum-pill.k-rec{background:var(--btn-dark);color:#fff}
+.sum-pill.k-freq{border:1px solid #b5b5b5;background:#fff;color:var(--ink2);padding:1px 8px}
+.sum-action{font-size:13px;font-weight:600}
+.sum-text{font-size:13px;color:var(--ink2);line-height:1.6;margin-top:5px}
+.sum-tip{font-size:13px;color:var(--ink2);line-height:1.6;min-width:0}

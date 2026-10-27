@@ -15,18 +15,30 @@
     <div id="home-reserve-area"></div>
     <div class="sec"><h2>今日训练</h2></div>
     <div id="home-plan-card"></div>
+    <!-- 最近运动摘要卡（V1.2 REQ-2026-0061，纯展示不可点击） -->
+    <div id="home-summary-card"></div>
   </section>
 
-  <!-- ===== 识别 Tab ===== -->
+  <!-- ===== 识别 Tab（V1.1：双子 Tab=拍照识别（默认）/ 列表） ===== -->
   <section class="page tab-page" id="page-identify">
     <header class="hd"><h1>识别</h1></header>
-    <div class="viewfinder clickable" id="viewfinder" role="button" tabindex="0" aria-label="上传器械照片">
-      <span class="vf-corner tl"></span><span class="vf-corner tr"></span>
-      <span class="vf-corner bl"></span><span class="vf-corner br"></span>
-      点击上传器械照片
-      <input type="file" id="photo-input" accept="image/*" hidden/>
+    <div class="subtabs" id="id-subtabs">
+      <button class="subtab active" data-pane="photo" type="button">拍照识别</button>
+      <button class="subtab" data-pane="list" type="button">列表</button>
     </div>
-    <p class="tip-line">上传清晰图有利于识别</p>
+    <div id="id-pane-photo">
+      <div class="viewfinder clickable" id="viewfinder" role="button" tabindex="0" aria-label="上传器械照片">
+        <span class="vf-corner tl"></span><span class="vf-corner tr"></span>
+        <span class="vf-corner bl"></span><span class="vf-corner br"></span>
+        点击上传器械照片
+        <input type="file" id="photo-input" accept="image/*" hidden/>
+      </div>
+      <p class="tip-line">上传清晰图有利于识别</p>
+    </div>
+    <div id="id-pane-list" class="hidden">
+      <div class="fall-search id-search"><input id="list-search" type="search" placeholder="搜索器械名称" autocomplete="off"/></div>
+      <div id="list-body"></div>
+    </div>
   </section>
 
   <!-- ===== 日志 Tab（M3） ===== -->
@@ -59,7 +71,7 @@
 
     <div id="cam-result" class="hidden">
       <div class="sec"><h2>候选器械</h2><span class="note" id="sec-cand-note">相似度为示例值</span></div>
-      <div id="cand-list"></div>
+      <div id="cand-swipe"></div>
 
       <div class="card fall-card">
         <button class="fall-head" id="fall-toggle" type="button">
@@ -114,7 +126,6 @@
 
     <div class="exec-bar">
       <button class="btn-secondary" id="btn-repick" type="button">重新选择</button>
-      <button class="btn-primary" id="btn-finish" type="button">完成训练</button>
     </div>
   </section>
 
@@ -219,13 +230,31 @@
     </div>
   </div>
 
+  <!-- 组次重量录入弹层（V1.1：动作卡「完成」触发，默认按方案模板预填） -->
+  <div id="rec-modal" class="modal hidden">
+    <div class="modal-mask" id="rec-mask"></div>
+    <div class="modal-card">
+      <button class="modal-close" id="rec-close" aria-label="关闭">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+      <h2 class="rec-title" id="rec-title">动作名</h2>
+      <div class="rec-fields">
+        <label>组数<input id="rec-sets" type="number" min="1" step="1" inputmode="numeric"/></label>
+        <label>每组重量（kg）<input id="rec-weight" type="number" min="0" step="0.5" inputmode="decimal"/></label>
+      </div>
+      <button class="btn-primary" id="rec-confirm" type="button" disabled>确认完成</button>
+    </div>
+  </div>
+
   <!-- Toast -->
   <div id="toast" class="hidden"><span class="spinner"></span><span id="toast-text">识别中…</span></div>
 </div>
 
 <script src="js/data.js"></script>
+<script src="js/store.js"></script>
 <script src="js/config.local.js"></script>
 <script src="js/baidu-ai.js"></script>
+<script src="js/summary.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

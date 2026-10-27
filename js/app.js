@@ -1,5 +1,6 @@
-/* 健身器械助手 V1.0 · M1 识别链路
-   识别流程：点击取景框 / 相机按钮 → 上传图片 → 调用百度识图模型（未配置 Key 走 Mock）→ 返回候选
+/* 健身器械助手 V1.1 · 识别链路
+   识别流程：点击取景框 / 相机按钮 → 上传图片 → 调用百度识图模型（未配置 Key 走 Mock）→ 返回候选侧滑大卡
+   V1.1 增量：识别 Tab 双子 Tab（拍照/列表）、候选侧滑大卡、执行页动作完成+组次重量录入、日志当日详情
    全局框架：4 Tab 切换不重载、页面状态保留；二级页隐藏 Tab 栏 + 左上角返回 */
 'use strict';
 
@@ -31,10 +32,6 @@ function shuffle(arr) {
 const esc = s => String(s).replace(/[&<>"']/g, c =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-const ICON_DUMBBELL = `
-<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-  <path d="M7 8v8M4.5 9.5v5M17 8v8M19.5 9.5v5M7 12h10"/>
-</svg>`;
 const ICON_WARN = `
 <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
   <path d="M12 4 21 19H3z"/><path d="M12 10v3.6M12 16.4v.2"/>
@@ -46,7 +43,7 @@ function showTab(name) {
   $$('.tab-page').forEach(p => p.classList.toggle('active', p.id === 'page-' + name));
   $$('#tabbar .tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
   closeSubPages();
-  if (name === 'home') { renderHomeCard(); renderHomeReserve(); }
+  if (name === 'home') { renderHomeCard(); renderHomeReserve(); renderSummary(); }
   if (name === 'log') renderLog();
 }
 function openSubPage(id) {
@@ -82,9 +79,10 @@ $('#photo-input').addEventListener('change', e => {
 function openCameraWithPhoto() {
   // 重置识别会话
   $('#cam-result').classList.add('hidden');
-  $('#cand-list').innerHTML = '';
+  candItems = []; candIdx = 0;
+  $('#cand-swipe').innerHTML = '';
   $('#search-input').value = '';
-  renderFallbackList('');
+  renderEquipGroups($('#fallback-list'), '', { mark: true });
   // 展示已上传照片
   $('#photo-holder').innerHTML = `<img src="${camPhotoDataUrl}" alt="照片预览"/>`;
   openSubPage('camera');
@@ -122,31 +120,77 @@ function mockCandidates() {
     .map((it, i) => ({ ...it, sim: Math.min(80, base[i] + rand(-3, 3)) }));
 }
 
+/* 候选侧滑大卡（V1.1）：一次一张、左右滑动切换、圆点指示器；
+   卡片=大图占位+器械名+发力点标签胶囊+相似度徽章+「就是它」；点卡片或点按钮均 → 器械详情页 */
+let candItems = [], candIdx = 0;
+
 function renderResults(candidates, mode) {
   $('#sec-cand-note').textContent = mode === 'baidu' ? '相似度为模型置信度' : '相似度为示例值';
-  const box = $('#cand-list');
-  if (!candidates.length) {
+  candItems = candidates; candIdx = 0;
+  renderSwipe();
+}
+
+function renderSwipe() {
+  const box = $('#cand-swipe');
+  if (!candItems.length) {
     box.innerHTML = '<div class="empty-tip">未识别到器械库中的器械，请在下方列表手动选择</div>';
     return;
   }
-  box.innerHTML = candidates.map((it, i) => `
-    <div class="cand">
-      <div class="thumb">${ICON_DUMBBELL}</div>
-      <div>
-        <div class="t">Top${i + 1} · ${esc(it.name)}</div>
-        <div class="s">相似度 ${it.sim}%${mode === 'baidu' ? '' : '（示例）'}</div>
+  box.innerHTML = `
+    <div class="swipe-wrap" id="swipe-wrap">
+      <div class="swipe-track" id="swipe-track">
+        ${candItems.map(it => `
+          <div class="cand-card" data-eqid="${it.id}">
+            <div class="cand-img">器械图片</div>
+            <span class="cand-badge">${it.sim}% 相似</span>
+            <div class="cand-name">${esc(it.name)}</div>
+            <div class="cand-caps"><span class="capsule">${esc(it.muscle)}</span></div>
+            <button class="btn-primary cand-btn" type="button">就是它</button>
+          </div>`).join('')}
       </div>
-      <button class="btn-lite" type="button" data-eqid="${it.id}">就是它</button>
-    </div>`).join('');
+      <div class="swipe-ind" id="swipe-ind"></div>
+    </div>`;
+  $('#swipe-track').style.transform = `translateX(-${candIdx * 100}%)`;
+  renderSwipeInd();
+  bindSwipe($('#swipe-wrap'));
 }
 
-/* 兜底列表：按类型分组 + 搜索模糊匹配；无命中 → 「没有找到相关器械」 */
-function renderFallbackList(query) {
+function renderSwipeInd() {
+  $('#swipe-ind').innerHTML = `
+    <span class="swipe-dots">${candItems.map((_, i) => `<i class="dot ${i === candIdx ? 'on' : ''}"></i>`).join('')}</span>
+    <span class="swipe-label">第 ${candIdx + 1}/${candItems.length} 张</span>`;
+}
+
+function bindSwipe(wrap) {
+  let sx = null, dx = 0, dragging = false;
+  wrap.addEventListener('pointerdown', e => { sx = e.clientX; dx = 0; dragging = true; });
+  wrap.addEventListener('pointermove', e => { if (dragging) dx = e.clientX - sx; });
+  wrap.addEventListener('pointerup', e => {
+    if (!dragging) return;
+    dragging = false;
+    if (Math.abs(dx) > 40) { // 滑动切卡
+      candIdx = Math.min(candItems.length - 1, Math.max(0, candIdx + (dx < 0 ? 1 : -1)));
+      $('#swipe-track').style.transform = `translateX(-${candIdx * 100}%)`;
+      renderSwipeInd();
+    } else if (Math.abs(dx) < 8 && !e.target.closest('.cand-btn')) { // 点卡片 → 详情
+      const card = e.target.closest('.cand-card');
+      if (card) openDetail(card.dataset.eqid, 'camera');
+    }
+  });
+  wrap.addEventListener('pointercancel', () => { dragging = false; });
+  wrap.addEventListener('click', e => { // 「就是它」按钮 → 详情
+    const b = e.target.closest('.cand-btn');
+    if (b) openDetail(b.closest('.cand-card').dataset.eqid, 'camera');
+  });
+}
+
+/* 器械分组列表（同源组件）：拍照识别页兜底 与 识别 Tab·列表子 Tab 共用
+   按类型分组 + 搜索模糊匹配；无命中 → 「没有找到相关器械」；mark=选中标记（仅兜底场景） */
+function renderEquipGroups(box, query, opts = {}) {
   const q = query.trim().toLowerCase();
   const groups = EQUIP_GROUPS
     .map(g => ({ ...g, items: g.items.filter(it => !q || it.name.toLowerCase().includes(q)) }))
     .filter(g => g.items.length);
-  const box = $('#fallback-list');
   if (!groups.length) {
     box.innerHTML = '<div class="empty-tip">没有找到相关器械</div>';
     return;
@@ -157,7 +201,7 @@ function renderFallbackList(query) {
       ${g.items.map(it => `
         <div class="fitem" data-eqid="${it.id}">
           <span>${esc(it.name)}</span>
-          <span class="mark">识别未命中但用户选定</span>
+          ${opts.mark ? '<span class="mark">识别未命中但用户选定</span>' : ''}
         </div>`).join('')}
     </div>`).join('');
 }
@@ -229,10 +273,20 @@ $('#back-detail').addEventListener('click', () => {
   $('#page-detail').classList.remove('active');
 });
 
-// 候选「就是它」（事件委托）
-$('#cand-list').addEventListener('click', e => {
-  const btn = e.target.closest('.btn-lite');
-  if (btn) openDetail(btn.dataset.eqid, 'camera');
+// 识别 Tab 双子 Tab：拍照识别（默认）/ 列表
+$('#id-subtabs').addEventListener('click', e => {
+  const b = e.target.closest('.subtab');
+  if (!b) return;
+  $$('#id-subtabs .subtab').forEach(x => x.classList.toggle('active', x === b));
+  const photo = b.dataset.pane === 'photo';
+  $('#id-pane-photo').classList.toggle('hidden', !photo);
+  $('#id-pane-list').classList.toggle('hidden', photo);
+});
+// 列表子 Tab：搜索 + 点器械行 → 器械详情页
+$('#list-search').addEventListener('input', e => renderEquipGroups($('#list-body'), e.target.value));
+$('#list-body').addEventListener('click', e => {
+  const item = e.target.closest('.fitem');
+  if (item) openDetail(item.dataset.eqid, 'identify');
 });
 
 // 兜底列表：折叠/展开、搜索、选定
@@ -241,7 +295,7 @@ $('#fall-toggle').addEventListener('click', () => {
   $('#fall-arrow').textContent = $('#fall-toggle').classList.contains('collapsed') ? '▸' : '▾';
   $('#fallback-body').classList.toggle('hidden');
 });
-$('#search-input').addEventListener('input', e => renderFallbackList(e.target.value));
+$('#search-input').addEventListener('input', e => renderEquipGroups($('#fallback-list'), e.target.value, { mark: true }));
 
 $('#fallback-list').addEventListener('click', e => {
   const item = e.target.closest('.fitem');
@@ -254,7 +308,7 @@ $('#fallback-list').addEventListener('click', e => {
 
 /* ---------- M2 · 今日训练：主卡 / 今日方案 / 方案执行 / 完成弹层 ---------- */
 const LS_PLAN = 'gym_plan_';   // 今日方案（按天）
-const LS_CHK = 'gym_chk_';     // 逐组打卡（按天）
+const LS_CHK = 'gym_chk_';     // 当日执行记录（按天；V1.1：records=动作完成记录 动作/组数/重量）
 const LS_MODAL = 'gym_done_modal_'; // 完成弹层已展示标记（每日一次）
 const PARTS = Object.keys(PLAN_TEMPLATES);
 let planPart = null; // 今日方案页当前选中部位
@@ -268,12 +322,19 @@ const WARMUP_TEXT = {
 const todayStr = () => { const d = new Date(); const p = n => String(n).padStart(2, '0'); return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()); };
 const getPlan = () => { try { return JSON.parse(localStorage.getItem(LS_PLAN + todayStr())); } catch (e) { return null; } };
 const savePlan = p => localStorage.setItem(LS_PLAN + todayStr(), JSON.stringify(p));
-const getChk = () => { try { return JSON.parse(localStorage.getItem(LS_CHK + todayStr())) || { done: {} }; } catch (e) { return { done: {} }; } };
-const saveChk = c => localStorage.setItem(LS_CHK + todayStr(), JSON.stringify(c));
+/* 当日执行记录：{ startedAt, finishedAt, warmupDone, records: { 动作序号: { action, sets, weight } } } */
+const emptyExec = () => ({ startedAt: null, finishedAt: null, warmupDone: false, records: {} });
+const getExec = () => {
+  try {
+    const v = JSON.parse(localStorage.getItem(LS_CHK + todayStr())) || {};
+    return { ...emptyExec(), ...v, records: v.records || {} };
+  } catch (e) { return emptyExec(); }
+};
+const saveExec = ex => localStorage.setItem(LS_CHK + todayStr(), JSON.stringify(ex));
+const doneActions = ex => Object.keys(ex.records).length;
 const totalSets = plan => plan.actions.reduce((s, a) => s + a.sets, 0);
-const doneSetsOf = chk => Object.values(chk.done).reduce((s, n) => s + n, 0);
 
-/* 首页主卡：无方案=去选部位 / 进行中=开始·继续训练 / 已完成=查看方案 */
+/* 首页主卡：无方案=去选部位 / 进行中=开始·继续训练 / 已完成=查看方案（进度按动作口径） */
 function renderHomeCard() {
   const box = $('#home-plan-card');
   const plan = getPlan();
@@ -286,14 +347,14 @@ function renderHomeCard() {
     $('#btn-goto-plan').addEventListener('click', openPlanPage);
     return;
   }
-  const chk = getChk();
-  const total = totalSets(plan), done = doneSetsOf(chk);
-  const finished = !!chk.finishedAt || done >= total;
+  const ex = getExec();
+  const total = plan.actions.length, done = doneActions(ex);
+  const finished = total > 0 && done >= total;
   const label = finished ? '查看方案' : (done > 0 ? '继续训练' : '开始训练');
   box.innerHTML = `
     <div class="card home-plan">
       <div class="home-plan-title">今日：${esc(plan.part)}</div>
-      <div class="progress-row"><span class="progress-label">已完成组数</span><span class="progress-num">${done}/${total} 组</span></div>
+      <div class="progress-row"><span class="progress-label">已完成动作</span><span class="progress-num">${done}/${total}</span></div>
       <div class="progress-track"><div class="progress-fill" style="width:${total ? Math.round(done / total * 100) : 0}%"></div></div>
       <button class="btn-primary" id="btn-home-go" type="button">${label}</button>
     </div>`;
@@ -318,19 +379,21 @@ function renderPlanPage() {
 
 function generatePlan() {
   savePlan({ part: planPart, actions: PLAN_TEMPLATES[planPart].map(a => ({ ...a })), createdAt: Date.now() });
-  localStorage.removeItem(LS_CHK + todayStr()); // 方案更新 → 当日打卡重置
+  localStorage.removeItem(LS_CHK + todayStr()); // 方案更新 → 当日执行记录重置
+  invalidateSummaryCache(); // 记录变化 → 最近运动 AI 文案缓存失效
   renderPlanPage();
   renderHomeCard();
+  renderSummary();
   showToast('今日方案已生成', 1500);
   openExec(); // 生成后直接进入方案执行页（PRD 主流程：选部位生成当日方案 → 进入方案执行页）
 }
 
-/* 方案执行页：热身激活块 + 逐组勾选打卡（localStorage 落库） */
+/* 方案执行页（V1.1）：热身激活轻量勾选 + 动作卡「完成」→ 组次重量录入弹层；全部动作完成自动弹完成弹层 */
 function openExec() {
   const plan = getPlan();
   if (!plan) { openPlanPage(); return; }
-  const chk = getChk();
-  if (!chk.startedAt) { chk.startedAt = Date.now(); saveChk(chk); }
+  const ex = getExec();
+  if (!ex.startedAt) { ex.startedAt = Date.now(); saveExec(ex); }
   renderExec();
   openSubPage('exec');
 }
@@ -338,13 +401,12 @@ function openExec() {
 function renderExec() {
   const plan = getPlan();
   if (!plan) return;
-  const chk = getChk();
-  const total = totalSets(plan);
-  const finished = !!chk.finishedAt;
-  $('#exec-sub').textContent = plan.part + ' · ' + plan.actions.length + ' 个动作 · 共 ' + total + ' 组';
+  const ex = getExec();
+  const n = plan.actions.length;
+  $('#exec-sub').textContent = plan.part + ' · ' + n + ' 个动作 · 共 ' + totalSets(plan) + ' 组';
   const firstEq = plan.actions[0] && plan.actions[0].equipId;
   $('#exec-list').innerHTML = `
-    <div class="action-row">
+    <div class="action-row ${ex.warmupDone ? 'done' : ''}">
       <div class="action-head">
         <div><div class="action-name">第一步：热身激活</div>
         <div class="action-meta">预计 5 分钟 · 心率微微上升即可</div></div>
@@ -354,38 +416,94 @@ function renderExec() {
         <li>目标肌群：${esc(WARMUP_TEXT[plan.part] || plan.part + '相关肌群')}，激活关节与肌肉</li>
         <li>方式：动态拉伸 + 轻重量器械试做</li>
       </ul>
+      <div class="act-foot">
+        ${ex.warmupDone
+          ? '<span class="act-check">已完成 ✓</span>'
+          : '<button class="btn-act lite" type="button" data-warmup="1">完成热身</button>'}
+      </div>
     </div>` + plan.actions.map((a, i) => {
     const eq = ALL_EQUIP.find(x => x.id === a.equipId);
-    const d = chk.done[i] || 0;
+    const rec = ex.records[i];
     return `
-      <div class="action-row">
+      <div class="action-row ${rec ? 'done' : ''}">
         <div class="action-head">
           <div><div class="action-name">第${i + 2}步：${esc(a.action)}</div>
           <div class="action-meta">${esc(eq ? eq.name : '')} · ${a.sets} 组×${a.reps} 次</div></div>
           <button class="teach-link" type="button" data-eqid="${a.equipId}">教学 &gt;</button>
-          <span class="action-done">${d}/${a.sets} 组</span>
         </div>
-        <div class="set-chips">${Array.from({ length: a.sets }, (_, k) =>
-      `<button class="set-chip ${k < d ? 'checked' : ''}" type="button" data-idx="${i}" data-set="${k}">第${k + 1}组</button>`).join('')}</div>
+        <div class="act-foot">
+          ${rec
+            ? `<span class="act-check">已完成 ✓</span><span class="rec-line">实际完成 ${rec.sets} 组 × ${rec.weight}kg</span>`
+            : '<button class="btn-act" type="button" data-idx="' + i + '">完成</button>'}
+        </div>
       </div>`;
   }).join('');
-  $('#exec-list').classList.toggle('exec-list-finished', finished);
-  const btn = $('#btn-finish');
-  btn.textContent = finished ? '已完成今日训练' : '完成训练';
-  btn.disabled = finished;
 }
 
-/* 完成弹层：统计为动态数据；每日一次 */
-function showDoneModal(chk) {
-  const min = Math.max(1, Math.round(((chk.finishedAt || Date.now()) - (chk.startedAt || Date.now())) / 60000));
-  $('#modal-stats').textContent = '本次共完成 ' + doneSetsOf(chk) + ' 组 · 训练时长 ' + min + ' 分钟';
+/* 组次重量录入弹层：默认按方案模板预填（组数=计划组数，重量=动作默认配置）；
+   组数<1 或重量≤0 或留空 → 确认按钮置灰；确认后不可重复录入 */
+let recIdx = null;
+
+function openRecModal(i) {
+  const plan = getPlan();
+  if (!plan) return;
+  const ex = getExec();
+  if (ex.records[i]) return; // 已录入不可重复
+  recIdx = i;
+  const a = plan.actions[i];
+  $('#rec-title').textContent = a.action;
+  $('#rec-sets').value = a.sets;
+  $('#rec-weight').value = a.w != null ? a.w : '';
+  validateRec();
+  $('#rec-modal').classList.remove('hidden');
+}
+
+function validateRec() {
+  const s = Number($('#rec-sets').value), w = Number($('#rec-weight').value);
+  const ok = $('#rec-sets').value !== '' && $('#rec-weight').value !== ''
+    && Number.isInteger(s) && s >= 1 && w > 0;
+  $('#rec-confirm').disabled = !ok;
+  return ok;
+}
+
+const closeRecModal = () => { recIdx = null; $('#rec-modal').classList.add('hidden'); };
+
+function confirmRec() {
+  if (recIdx === null || !validateRec()) return;
+  const plan = getPlan();
+  const a = plan.actions[recIdx];
+  const ex = getExec();
+  ex.records[recIdx] = { action: a.action, sets: Number($('#rec-sets').value), weight: Number($('#rec-weight').value) };
+  const allDone = plan.actions.length > 0 && doneActions(ex) >= plan.actions.length;
+  if (allDone && !ex.finishedAt) ex.finishedAt = Date.now(); // 全部动作完成 = 今日训练完成
+  saveExec(ex);
+  AppStore.report('logs', { // M4：训练日志上报后端（按天 upsert，失败静默）
+    date: todayStr(), type: 'solo',
+    records: Object.values(ex.records).map(r => ({ action: r.action, sets: r.sets, weight: r.weight }))
+  });
+  invalidateSummaryCache(); // 录入新记录 → 最近运动 AI 文案缓存失效
+  closeRecModal();
+  renderExec();
+  renderHomeCard();
+  renderSummary();
+  if (allDone && !localStorage.getItem(LS_MODAL + todayStr())) {
+    localStorage.setItem(LS_MODAL + todayStr(), '1');
+    showDoneModal(ex);
+  }
+}
+
+/* 完成弹层：统计=各动作录入组数之和；每日一次 */
+function showDoneModal(ex) {
+  const min = Math.max(1, Math.round(((ex.finishedAt || Date.now()) - (ex.startedAt || Date.now())) / 60000));
+  const sets = Object.values(ex.records).reduce((s, r) => s + r.sets, 0);
+  $('#modal-stats').textContent = '本次共完成 ' + sets + ' 组 · 训练时长 ' + min + ' 分钟';
   $('#done-modal').classList.remove('hidden');
 }
 const hideDoneModal = () => $('#done-modal').classList.add('hidden');
 
 /* ---------- M2 事件绑定 ---------- */
-$('#back-plan').addEventListener('click', () => { renderHomeCard(); closeSubPages(); });
-$('#back-exec').addEventListener('click', () => { renderHomeCard(); closeSubPages(); });
+$('#back-plan').addEventListener('click', () => { renderHomeCard(); renderSummary(); closeSubPages(); });
+$('#back-exec').addEventListener('click', () => { renderHomeCard(); renderSummary(); closeSubPages(); });
 
 $('#part-grid').addEventListener('click', e => {
   const item = e.target.closest('.part-item');
@@ -400,33 +518,26 @@ $('#link-reserve').addEventListener('click', () => openReserve('plan'));
 $('#exec-list').addEventListener('click', e => {
   const teach = e.target.closest('.teach-link');
   if (teach) { openDetail(teach.dataset.eqid, 'exec'); return; }
-  const chip = e.target.closest('.set-chip');
-  if (!chip) return;
-  const chk = getChk();
-  if (chk.finishedAt) return;
-  const idx = chip.dataset.idx, k = Number(chip.dataset.set);
-  const cur = chk.done[idx] || 0;
-  if (k < cur) chk.done[idx] = k;        // 点已勾组 → 从该组起取消
-  else if (k === cur) chk.done[idx] = k + 1; // 顺次勾下一组
-  else return;                            // 不允许跳组
-  saveChk(chk);
-  renderExec();
-});
-
-$('#btn-finish').addEventListener('click', () => {
-  const chk = getChk();
-  if (chk.finishedAt) return;
-  chk.finishedAt = Date.now();
-  saveChk(chk);
-  renderExec();
-  renderHomeCard();
-  if (!localStorage.getItem(LS_MODAL + todayStr())) {
-    localStorage.setItem(LS_MODAL + todayStr(), '1');
-    showDoneModal(chk);
+  const warm = e.target.closest('[data-warmup]');
+  if (warm) { // 热身轻量勾选（可反复勾选/取消，不阻塞完成弹层触发）
+    const ex = getExec();
+    ex.warmupDone = !ex.warmupDone;
+    saveExec(ex);
+    renderExec();
+    return;
   }
+  const act = e.target.closest('.btn-act[data-idx]');
+  if (act) openRecModal(Number(act.dataset.idx)); // 完成 → 组次重量录入弹层
 });
 
-// 重新选择 → 回今日方案页重选部位（重新生成会重置当日打卡）
+// 组次重量录入弹层
+$('#rec-sets').addEventListener('input', validateRec);
+$('#rec-weight').addEventListener('input', validateRec);
+$('#rec-confirm').addEventListener('click', confirmRec);
+$('#rec-close').addEventListener('click', closeRecModal);
+$('#rec-mask').addEventListener('click', closeRecModal);
+
+// 重新选择 → 回今日方案页重选部位（重新生成会重置当日执行记录）
 $('#btn-repick').addEventListener('click', () => { closeSubPages(); openPlanPage(); });
 
 $('#modal-close').addEventListener('click', hideDoneModal);
@@ -481,12 +592,16 @@ $('#btn-submit-resv').addEventListener('click', () => {
     coachName: coach.name, course: coach.course,
     createdAt: Date.now(), rating: null, ratedAt: null
   }));
+  AppStore.report('lessons', { // M4：教练课预约上报后端（按天 upsert，失败静默）
+    date: todayStr(), coachName: coach.name, course: coach.course, createdAt: Date.now()
+  });
+  invalidateSummaryCache(); // 教练课记录变化 → 最近运动 AI 文案缓存失效
   showToast('预约成功，教练会尽快联系你', 2000);
-  closeSubPages(); renderHomeCard(); renderHomeReserve();
+  closeSubPages(); renderHomeCard(); renderHomeReserve(); renderSummary();
 });
 $('#back-reserve').addEventListener('click', () => {
   closeSubPages();
-  if (resvFrom === 'plan') openPlanPage(); else renderHomeCard();
+  if (resvFrom === 'plan') openPlanPage(); else { renderHomeCard(); renderSummary(); }
 });
 
 /* 首页今日预约卡：有教练课（课程/教练+五星评分）/ 已评分（置灰）/ 无教练课（引导预约态） */
@@ -527,15 +642,17 @@ $('#home-reserve-area').addEventListener('click', e => {
   renderHomeReserve();
 });
 
-/* 训练日志页：月视图日历；格内图标标记当日自由训练/教练课，图例在日历下方 */
+/* 训练日志页（V1.1）：月视图日历 + 点击日期展开当日详情
+   格内图标：哑铃=自由训练 / 人像=教练课；图例在日历下方；再点同日或切月 → 收起 */
 const ICON_SOLO = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6.5 6.5v11M17.5 6.5v11M3.5 9v6M20.5 9v6M6.5 12h11"/></svg>';
 const ICON_COACH = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c1.5-3.5 4-5 7-5s5.5 1.5 7 5"/></svg>';
 let calY = new Date().getFullYear(), calM = new Date().getMonth(); // 日历当前展示年月（0-based）
+let selDate = null; // 当前展开详情的日期（YYYY-MM-DD）
 
-function gatherLogDays() { // dateStr -> {solo, coach}；真实打卡/预约数据 + 测试期写死演示数据合并
+function gatherLogDays() { // dateStr -> {solo:[{action,sets,weight}]|null, coach:{name,course}|null}；真实记录 + 演示数据合并
   const map = {};
   for (const [date, m] of Object.entries(DEMO_LOG_DAYS)) {
-    map[date] = { ...(map[date] || {}), ...m };
+    map[date] = { solo: m.solo || null, coach: m.coach || null };
   }
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);
@@ -543,16 +660,51 @@ function gatherLogDays() { // dateStr -> {solo, coach}；真实打卡/预约数�
     if (key.startsWith(LS_CHK)) {
       const date = key.slice(LS_CHK.length);
       try {
-        const chk = JSON.parse(localStorage.getItem(key));
-        if (chk && chk.finishedAt && doneSetsOf(chk) > 0) (map[date] = map[date] || {}).solo = true;
+        const ex = JSON.parse(localStorage.getItem(key));
+        const recs = Object.values((ex && ex.records) || {});
+        if (recs.length) {
+          (map[date] = map[date] || {}).solo = recs.map(r => ({ action: r.action, sets: r.sets, weight: r.weight }));
+        }
       } catch {}
     } else if (key.startsWith(LS_RESV)) {
       const date = key.slice(LS_RESV.length);
-      try { if (JSON.parse(localStorage.getItem(key))) (map[date] = map[date] || {}).coach = true; } catch {}
+      try {
+        const r = JSON.parse(localStorage.getItem(key));
+        if (r) (map[date] = map[date] || {}).coach = { name: r.coachName, course: r.course };
+      } catch {}
     }
   }
   return map;
 }
+
+/* 当日详情：自由训练明细列表 + 教练信息卡片（复用预约页 .coach-card 样式）；两类并存上下都展示 */
+function renderDayDetail(m) {
+  const parts = [];
+  if (m.solo && m.solo.length) {
+    parts.push(`
+      <div class="day-card">
+        <div class="day-cap">${ICON_SOLO}自由训练</div>
+        ${m.solo.map(r => `<div class="day-row">${esc(r.action)} × ${r.sets} 组 × ${r.weight}kg</div>`).join('')}
+      </div>`);
+  }
+  if (m.coach) {
+    const c = RESERVE_COACHES.find(x => x.name === m.coach.name);
+    const tags = c ? c.tags : [];
+    parts.push(`
+      <div class="day-card">
+        <div class="day-cap">${ICON_COACH}教练课</div>
+        <div class="coach-card">
+          <span class="cc-photo">头像区</span>
+          <span class="cc-name">${esc(m.coach.name)}教练</span>
+          <span class="dd-course">${esc(m.coach.course)}</span>
+          <span class="cc-tags">${tags.map(t => `<span class="tag">${esc(t)}</span>`).join('')}</span>
+        </div>
+      </div>`);
+  }
+  if (!parts.length) return '<div class="day-card rest">该日休息</div>';
+  return parts.join('');
+}
+
 function renderLog() {
   const map = gatherLogDays();
   const startDow = new Date(calY, calM, 1).getDay(); // 1 号是周几（0=日）
@@ -564,7 +716,16 @@ function renderLog() {
     const ds = `${calY}-${String(calM + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
     const m = map[ds] || {};
     const marks = (m.solo ? ICON_SOLO : '') + (m.coach ? ICON_COACH : '');
-    cells += `<div class="cal-cell ${ds === todayS ? 'today' : ''}"><span class="cal-day">${d}</span><span class="cal-marks">${marks}</span></div>`;
+    cells += `<div class="cal-cell ${ds === todayS ? 'today' : ''} ${ds === selDate ? 'sel' : ''}" data-date="${ds}"><span class="cal-day">${d}</span><span class="cal-marks">${marks}</span></div>`;
+  }
+  let detail = '';
+  if (selDate) {
+    const [, mm, dd] = selDate.split('-');
+    detail = `
+      <div class="day-detail">
+        <div class="day-date">${Number(mm)} 月 ${Number(dd)} 日</div>
+        ${renderDayDetail(map[selDate] || {})}
+      </div>`;
   }
   $('#log-body').innerHTML = `
     <div class="cal-card">
@@ -576,15 +737,22 @@ function renderLog() {
       <div class="cal-week">${['日', '一', '二', '三', '四', '五', '六'].map(w => `<span>${w}</span>`).join('')}</div>
       <div class="cal-grid">${cells}</div>
     </div>
-    <div class="cal-legend"><span>${ICON_SOLO} 自由训练</span><span>${ICON_COACH} 教练课</span></div>`;
+    <div class="cal-legend"><span>${ICON_SOLO} 自由训练</span><span>${ICON_COACH} 教练课</span></div>
+    ${detail}`;
 }
 $('#log-body').addEventListener('click', e => {
-  if (e.target.closest('#cal-prev')) { calM--; if (calM < 0) { calM = 11; calY--; } renderLog(); return; }
-  if (e.target.closest('#cal-next')) { calM++; if (calM > 11) { calM = 0; calY++; } renderLog(); }
+  if (e.target.closest('#cal-prev')) { calM--; if (calM < 0) { calM = 11; calY--; } selDate = null; renderLog(); return; }
+  if (e.target.closest('#cal-next')) { calM++; if (calM > 11) { calM = 0; calY++; } selDate = null; renderLog(); return; }
+  const cell = e.target.closest('.cal-cell:not(.blank)');
+  if (!cell) return;
+  const ds = cell.dataset.date;
+  selDate = selDate === ds ? null : ds; // 再点同日 → 收起
+  renderLog();
 });
 
-/* 我的页面：个人资料卡 + 四宫格记录入口（测试期写死；入口点击 toast 摘要） */
-$('#mine-body').innerHTML = `
+/* 我的页面：个人资料卡 + 四宫格记录入口（M4：main/sub 来自后端 profile，点击 toast 摘要） */
+function renderMine() {
+  $('#mine-body').innerHTML = `
   <div class="me-card">
     <span class="me-avatar">头像
       <i class="me-cam"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8h3l2-2h6l2 2h3v11H4z"/><circle cx="12" cy="13" r="3"/></svg></i>
@@ -597,11 +765,37 @@ $('#mine-body').innerHTML = `
   <div class="me-grid">${MINE_DATA.map(m => `
     <button class="me-item" type="button" data-title="${m.title}"><span class="me-ico">${m.icon}</span><span>${m.title}</span></button>`).join('')}
   </div>`;
+}
+renderMine();
 $('#mine-body').addEventListener('click', e => {
   const b = e.target.closest('.me-item'); if (!b) return;
   const m = MINE_DATA.find(x => x.title === b.dataset.title);
   showToast(m.main + (m.sub ? ' · ' + m.sub : ''), 2000);
 });
 
+/* M4：后端配置到达后刷新依赖配置的已渲染视图（store.js 派发 appdata 事件） */
+window.addEventListener('appdata', () => {
+  renderMine();
+  renderHomeReserve(); renderHomeCard();
+  renderEquipGroups($('#list-body'), $('#list-search').value || '');
+});
+
 /* ---------- 启动：默认落首页 Tab ---------- */
+/* 窄窗口等比缩放：<500px 时手机壳保持 390 设计宽，按窗口宽 scale，铺满且布局不变形（真实手机上无此窗口问题） */
+function fitPhone() {
+  const phone = $('#phone');
+  const vw = document.documentElement.clientWidth;
+  if (vw >= 500) { phone.style.transform = ''; phone.style.width = ''; phone.style.height = ''; return; }
+  const s = vw / 390;
+  phone.style.width = '390px';
+  phone.style.height = (window.innerHeight / s) + 'px'; // 高度除以缩放补偿，视觉上铺满整屏
+  phone.style.transform = 'scale(' + s + ')';
+  phone.style.transformOrigin = 'top center';
+}
+window.addEventListener('resize', fitPhone);
+fitPhone();
+
+AppStore.init(); // M4：拉取后端配置（教练/器械/档案），到达后经 appdata 事件刷新视图；失败回退内置默认值
+
+renderEquipGroups($('#list-body'), ''); // 识别 Tab·列表子 Tab 初始数据
 showTab('home');
