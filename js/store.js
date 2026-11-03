@@ -41,6 +41,8 @@
         videoJump: eq.videoJump || VIDEO_JUMP_URL,
         safety: eq.safety || SAFETY_WARNING,
         guide: eq.guide || '',
+        muscles: Array.isArray(eq.muscles) ? eq.muscles : [],
+        subMuscles: Array.isArray(eq.subMuscles) ? eq.subMuscles : [],
         id: eq.id,
         name: eq.name
       });

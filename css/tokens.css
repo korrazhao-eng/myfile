@@ -1,0 +1,131 @@
+/* ==========================================================================
+   健身器械助手 · 设计令牌 (Design Tokens)
+   源设计稿: Ardot / 健身器械助手 · UI 设计
+   主题: 蓝 + 黑 + 银灰 · 深色运动风
+   用途: 直接作为 CSS 变量引入，或转成 Tailwind / SCSS 变量
+   ========================================================================== */
+
+:root {
+  /* ---------- 主色 60% · 黑 / 深灰 / 白 / 深蓝 ---------- */
+  --color-canvas:      #0A0A0C;  /* 页面底色 */
+  --color-surface:     #15171C;  /* 卡片底色 */
+  --color-surface-high:#1E2128;  /* 卡片内嵌层 / 悬浮层 */
+  --color-text:        #F5F7FA;  /* 主文字 */
+  --color-silver:      #C9CFD6;  /* 银灰 · 次级强调文字 */
+  --color-muted:       #6E7580;  /* 弱化说明文字 */
+
+  /* ---------- 辅助色 30% · 蓝 / 灰 ---------- */
+  --color-blue:        #3D7BFF;  /* 品牌主色 · CTA / 激活态 */
+  --color-blue-deep:   #143A8C;  /* 深蓝 · 后台顶栏 / 深色底 */
+  --color-blue-soft:   #16233C;  /* 蓝调浅底 · Tab 激活底 / 标签底 */
+  --color-silver-dim:  #8B929C;  /* 银灰次级 */
+  --color-border:      #252932;  /* 描边 / 分隔线 */
+
+  /* ---------- 语义色 ---------- */
+  --color-success:     #4FBF87;  /* 成功 / 已完成 */
+  --color-danger:      #D44545;  /* 危险 / 删除 */
+  --color-warning:     #F5B42C;  /* 警示 */
+  --color-overlay:     rgba(10, 10, 12, 0.74); /* 弹层遮罩 74% */
+
+  /* ---------- 圆角 ---------- */
+  --radius-card:    20px;   /* 卡片 */
+  --radius-button:  16px;   /* 按钮 */
+  --radius-pill:    36px;   /* 胶囊 Tab / 底部导航 */
+  --radius-chip:    999px;  /* 标签 chip */
+  --radius-input:   12px;   /* 输入框 */
+
+  /* ---------- 字号层级 ---------- */
+  --font-size-h1:      28px;  /* 页面主标题 */
+  --font-size-h2:      19px;  /* 区块标题 */
+  --font-size-h3:      16px;  /* 卡片标题 */
+  --font-size-body:    15px;  /* 正文 */
+  --font-size-caption: 12px;  /* 辅助说明 */
+  --font-size-metric:  48px;  /* 首页 / 摘要页 KPI 大数字 */
+  --font-size-kpi:     34px;  /* 后台 KPI 数字 */
+
+  /* ---------- 间距 ---------- */
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  20px;   /* 移动端水平 padding 标准 */
+  --space-6:  24px;
+  --space-8:  32px;
+
+  /* ---------- 字体 ---------- */
+  --font-family-cn: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-family-en: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+
+  /* ---------- 阴影 ---------- */
+  --shadow-l1: 0 2px 6px rgba(10, 10, 12, 0.08);
+  --shadow-l2: 0 4px 12px rgba(10, 10, 12, 0.10);
+  --shadow-l3: 0 6px 20px rgba(61, 123, 255, 0.30);  /* 主色强调发光 */
+  --shadow-card: 0 8px 24px rgba(10, 10, 12, 0.18);
+
+  /* ---------- 布局 ---------- */
+  --mobile-width:  390px;
+  --mobile-height: 844px;
+  --status-bar-height: 62px;
+  --tabbar-height:  62px;
+  --admin-width:  1440px;
+  --admin-topbar-height: 64px;
+  --admin-tabbar-height:  52px;
+}
+
+/* ---------- 通用组件类（可直接用，也可作为实现参考） ---------- */
+
+.t-card {
+  background: var(--color-surface);
+  border-radius: var(--radius-card);
+}
+
+.t-button-primary {
+  background: var(--color-blue);
+  color: #FFFFFF;
+  border-radius: var(--radius-button);
+  font-weight: 600;
+}
+
+.t-button-secondary {
+  background: var(--color-surface-high);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-button);
+}
+
+.t-button-disabled {
+  background: var(--color-surface-high);
+  color: var(--color-muted);
+  border-radius: var(--radius-button);
+}
+
+.t-chip {
+  border-radius: var(--radius-chip);
+  padding: 4px 12px;
+  font-size: var(--font-size-caption);
+}
+
+.t-input {
+  background: var(--color-surface-high);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-input);
+  color: var(--color-text);
+}
+
+.t-input:focus {
+  border-color: var(--color-blue);
+  box-shadow: 0 0 0 2px rgba(61, 123, 255, 0.30);
+}
+
+/* 底部胶囊导航（移动端） */
+.t-tabbar {
+  background: var(--color-surface);
+  border-radius: var(--radius-pill);
+  height: var(--tabbar-height);
+}
+
+.t-tabbar-item-active {
+  background: var(--color-blue);
+  color: #FFFFFF;
+  border-radius: var(--radius-pill);
+}

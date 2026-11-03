@@ -144,6 +144,8 @@ $('#equip-list').addEventListener('click', async e => {
       $('#equip-form-title').textContent = '编辑器械：' + eq.name;
       $('#equip-type').value = eq.type; $('#equip-name').value = eq.name;
       $('#equip-video').value = eq.videoUrl || ''; $('#equip-jump').value = eq.videoJump || '';
+      $('#equip-muscles').value = (eq.muscles || []).join(',');
+      $('#equip-sub').value = (eq.subMuscles || []).join(',');
       $('#equip-safety').value = eq.safety || '';
       $('#equip-cancel').classList.remove('hidden');
       window.scrollTo({top: document.body.scrollHeight, behavior: 'smooth'});
@@ -158,6 +160,8 @@ $('#equip-save').addEventListener('click', async () => {
     type: $('#equip-type').value, name,
     videoUrl: $('#equip-video').value.trim(),
     videoJump: $('#equip-jump').value.trim(),
+    muscles: $('#equip-muscles').value.split(/[,，]/).map(s => s.trim()).filter(Boolean),
+    subMuscles: $('#equip-sub').value.split(/[,，]/).map(s => s.trim()).filter(Boolean),
     safety: $('#equip-safety').value.trim()
   };
   try {
@@ -172,6 +176,7 @@ function resetEquipForm() {
   equipEditing = null;
   $('#equip-form-title').textContent = '新增器械';
   $('#equip-name').value = ''; $('#equip-video').value = ''; $('#equip-jump').value = '';
+  $('#equip-muscles').value = ''; $('#equip-sub').value = '';
   $('#equip-safety').value = '';
   $('#equip-cancel').classList.add('hidden');
 }
@@ -318,7 +323,7 @@ async function loadLogs() {
     <tr>
       <td>${esc(l.date || '')}</td>
       <td>${l.type === 'coach' ? '教练课' : '自由训练'}</td>
-      <td>${(l.records || []).map(r => `${esc(r.action)} ${r.sets}组×${r.weight}kg`).join(' ／ ') || '—'}</td>
+      <td>${(l.records || []).map(r => `${esc(r.action)} ${r.sets}组×${r.weight > 0 ? r.weight + 'kg' : '自重'}`).join(' ／ ') || '—'}</td>
     </tr>`).join('') || '<tr><td colspan="3" class="empty">暂无上报日志（用户端完成动作录入后同步）</td></tr>';
 }
 
@@ -355,7 +360,129 @@ $('#filter-clear').addEventListener('click', () => {
   loadLessons();
 });
 
+/* ================= 方案配置（执行方案：热身 / 训练步骤 / 拉伸收尾） =================
+   数据：GET /api/plans 全量拉取 → 本地编辑（输入即写入内存）→ PUT 全量保存；
+   字段与用户端执行页渲染一一对应（stage/action/equipId/equipText/sets/repsTxt/w/focus/detail/rest） */
+let PLANS = [];      // [{id, part, warmup:{targets,method,standard}, steps:[…], stretch:[…]}]
+let EQUIP_OPTS = []; // 教学跳转器械下拉选项
+
+async function loadPlans() {
+  const [plans, equips] = await Promise.all([getList('plans'), getList('equipments')]);
+  PLANS = Array.isArray(plans) ? plans : [];
+  EQUIP_OPTS = (equips || []).map(e => ({ id: e.id, name: e.name }));
+  renderPlans();
+}
+
+function stepCard(s, si) {
+  return `
+  <div class="step-card" data-si="${si}">
+    <div class="sub-head"><span>训练步骤 ${si + 1}</span><button class="btn mini danger" data-del-step="${si}" type="button">删除</button></div>
+    <div class="form-row">
+      <label>阶段名<input data-f="stage" value="${esc(s.stage || '')}" placeholder="如：宽度构建（大重量复合）"/></label>
+      <label>动作名称<input data-f="action" value="${esc(s.action || '')}"/></label>
+      <label>组次展示文本<input data-f="repsTxt" value="${esc(s.repsTxt || '')}" placeholder="如：4组 × 12次／3组 × 12次/侧"/></label>
+    </div>
+    <div class="form-row">
+      <label>教学跳转器械<select data-f="equipId">${EQUIP_OPTS.map(o => `<option value="${esc(o.id)}" ${o.id === s.equipId ? 'selected' : ''}>${esc(o.name)}</option>`).join('')}</select></label>
+      <label>器械展示文本<input data-f="equipText" value="${esc(s.equipText || '')}" placeholder="如：高位下拉机"/></label>
+      <label>组数（录入预填）<input data-f="sets" type="number" min="1" step="1" value="${esc(s.sets ?? 3)}"/></label>
+      <label>默认重量 kg<input data-f="w" type="number" min="0" step="0.5" value="${esc(s.w ?? 0)}"/></label>
+    </div>
+    <div class="form-row">
+      <label class="grow">目标肌群<input data-f="focus" value="${esc(s.focus || '')}"/></label>
+      <label>组间休息<input data-f="rest" value="${esc(s.rest || '')}" placeholder="如：90秒"/></label>
+    </div>
+    <div class="form-row">
+      <label class="grow">膝盖友好点（可选，腿部方案用）<input data-f="knee" value="${esc(s.knee || '')}" placeholder="如：膝盖角度固定，剪切力小"/></label>
+    </div>
+    <div class="form-row">
+      <label class="grow">关键细节<textarea data-f="detail" rows="2" placeholder="动作要领与常见错误">${esc(s.detail || '')}</textarea></label>
+    </div>
+  </div>`;
+}
+
+function stretchBlock(p) {
+  const list = (p.stretch || []).map((s, i) => `
+    <div class="step-card" data-sti="${i}">
+      <div class="sub-head"><span>拉伸动作 ${i + 1}</span><button class="btn mini danger" data-del-stretch="${i}" type="button">删除</button></div>
+      <div class="form-row">
+        <label class="grow">动作<input data-f="action" value="${esc(s.action || '')}"/></label>
+        <label class="grow">目标<input data-f="target" value="${esc(s.target || '')}"/></label>
+        <label>时间<input data-f="time" value="${esc(s.time || '')}" placeholder="如：每侧30秒"/></label>
+      </div>
+    </div>`).join('');
+  return `<div class="block-cap">拉伸收尾（${(p.stretch || []).length} 个动作）</div>${list}
+    <button class="btn mini" data-add-stretch type="button">+ 新增拉伸动作</button>`;
+}
+
+function renderPlans() {
+  if (!PLANS.length) {
+    $('#plans-editor').innerHTML = '<table class="tbl"><tbody><tr><td class="empty">暂无方案配置（data/plans.json 为空或后端未启动）</td></tr></tbody></table>';
+    return;
+  }
+  $('#plans-editor').innerHTML = PLANS.map((p, pi) => `
+    <div class="form-card plan-part" data-pi="${pi}">
+      <h3>${esc(p.part)} · 部位方案</h3>
+      <div class="form-row">
+        <label class="grow">热身 · 目标肌群<input data-f="targets" value="${esc(p.warmup?.targets || '')}"/></label>
+        <label class="grow">热身 · 方式<input data-f="method" value="${esc(p.warmup?.method || '')}"/></label>
+        <label class="grow">热身 · 标准<input data-f="standard" value="${esc(p.warmup?.standard || '')}"/></label>
+      </div>
+      <div class="block-cap">训练步骤（${(p.steps || []).length} 个）</div>
+      ${(p.steps || []).map((s, si) => stepCard(s, si)).join('')}
+      <button class="btn mini" data-add-step type="button">+ 新增训练步骤</button>
+      ${stretchBlock(p)}
+    </div>`).join('');
+}
+
+/* 输入即写入内存 PLANS（保存时一次 PUT 全量） */
+$('#plans-editor').addEventListener('input', e => {
+  const el = e.target;
+  const part = el.closest('[data-pi]'); if (!part) return;
+  const p = PLANS[Number(part.dataset.pi)]; if (!p) return;
+  const f = el.dataset.f; if (!f) return;
+  const step = el.closest('[data-si]');
+  const st = el.closest('[data-sti]');
+  if (step) {
+    const s = p.steps[Number(step.dataset.si)];
+    s[f] = (f === 'sets' || f === 'w') ? (Number(el.value) || 0) : el.value;
+  } else if (st) {
+    p.stretch[Number(st.dataset.sti)][f] = el.value;
+  } else {
+    p.warmup = p.warmup || {};
+    p.warmup[f] = el.value;
+  }
+});
+
+/* 新增 / 删除步骤与拉伸项（重渲染后焦点丢失，属预期） */
+$('#plans-editor').addEventListener('click', e => {
+  const part = e.target.closest('[data-pi]'); if (!part) return;
+  const p = PLANS[Number(part.dataset.pi)]; if (!p) return;
+  if (e.target.closest('[data-add-step]')) {
+    p.steps = p.steps || [];
+    p.steps.push({ stage: '', action: '', equipId: (EQUIP_OPTS[0] || {}).id || '', equipText: '', sets: 3, reps: 12, repsTxt: '', w: 20, focus: '', detail: '', rest: '60秒' });
+    renderPlans(); return;
+  }
+  if (e.target.closest('[data-add-stretch]')) {
+    p.stretch = p.stretch || [];
+    p.stretch.push({ action: '', target: '', time: '' });
+    renderPlans(); return;
+  }
+  const delStep = e.target.closest('[data-del-step]');
+  if (delStep) { p.steps.splice(Number(delStep.dataset.delStep), 1); renderPlans(); return; }
+  const delStretch = e.target.closest('[data-del-stretch]');
+  if (delStretch) { p.stretch.splice(Number(delStretch.dataset.delStretch), 1); renderPlans(); }
+});
+
+$('#plans-save').addEventListener('click', async () => {
+  try {
+    await api('plans', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(PLANS) });
+    toast('方案配置已保存，用户端重新生成方案即生效');
+  } catch (err) { toast('保存失败：' + err.message, false); }
+});
+
 /* ================= 启动 ================= */
 loadCoaches().catch(err => toast('加载失败：' + err.message, false));
 loadEquips().catch(() => {});
 loadLessons().catch(() => {});
+loadPlans().catch(err => toast('方案配置加载失败：' + err.message, false));

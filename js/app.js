@@ -231,9 +231,24 @@ function renderDetail(eq) {
   }
 
   parts.push(`
-    <div class="detail-cap">器械名称与目标肌群</div>
-    <h2 class="detail-name">${esc(eq.name)}</h2>
-    <div class="cap-row"><span class="cap-label">目标肌群</span><span class="capsule">${esc(eq.muscle)}</span></div>`);
+    <div class="card detail-info">
+      <div class="detail-cap">器械名称与目标肌群</div>
+      <h2 class="detail-name">${esc(eq.name)}</h2>
+      <div class="cap-row"><span class="cap-label">目标肌群</span><span class="capsule">${esc(eq.muscle)}</span></div>
+    </div>`);
+
+  // 发力肌群可视化：主发力红 / 辅助橙，图例可点击聚焦（后台 muscles / subMuscles 配置）
+  const mmNames = Array.isArray(eq.muscles) ? eq.muscles.filter(Boolean) : [];
+  const mmSub = Array.isArray(eq.subMuscles) ? eq.subMuscles.filter(Boolean) : [];
+  if (mmNames.length || mmSub.length) {
+    parts.push(`
+      <div class="card mm-card">
+        <div class="detail-cap">发力肌群示意</div>
+        <p class="mm-note">深红为主发力 · 橙为辅助发力 · 点图例可单独查看</p>
+        <div class="mm-views" id="mm-views"></div>
+        <div class="mm-legend" id="mm-legend"></div>
+      </div>`);
+  }
 
   if (eq.safety) {
     parts.push(`
@@ -252,6 +267,11 @@ function renderDetail(eq) {
   }
 
   $('#detail-body').innerHTML = parts.join('');
+
+  // 模型高亮：muscle-map.js 提供（两级别名匹配 + 红/橙分级 + 图例聚焦）
+  if (mmNames.length || mmSub.length) {
+    renderMuscleMap($('#mm-views'), mmNames, mmSub, $('#mm-legend'));
+  }
 }
 
 /* ---------- 事件绑定 ---------- */
@@ -377,8 +397,26 @@ function renderPlanPage() {
   $('#picked-part').textContent = planPart;
 }
 
+/* 后台方案配置缓存（M5）：/api/plans 拉取按 part 索引；失败静默 → 回退 data.js 内置模板 */
+let PLAN_CFG = null;
+function fetchPlans() {
+  fetch('/api/plans').then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
+    .then(list => {
+      PLAN_CFG = {};
+      (Array.isArray(list) ? list : []).forEach(p => { if (p && p.part) PLAN_CFG[p.part] = p; });
+    })
+    .catch(() => {}); // 无后端环境（GitHub Pages）保留内置默认值
+}
+
 function generatePlan() {
-  savePlan({ part: planPart, actions: PLAN_TEMPLATES[planPart].map(a => ({ ...a })), createdAt: Date.now() });
+  const cfg = PLAN_CFG && PLAN_CFG[planPart]; // 后台配置优先，未配置部位回退内置模板
+  savePlan({
+    part: planPart,
+    actions: (cfg ? cfg.steps : PLAN_TEMPLATES[planPart]).map(a => ({ ...a })),
+    warmup: cfg && cfg.warmup ? { ...cfg.warmup } : null,
+    stretch: cfg && Array.isArray(cfg.stretch) ? cfg.stretch.map(s => ({ ...s })) : null,
+    createdAt: Date.now()
+  });
   localStorage.removeItem(LS_CHK + todayStr()); // 方案更新 → 当日执行记录重置
   invalidateSummaryCache(); // 记录变化 → 最近运动 AI 文案缓存失效
   renderPlanPage();
@@ -405,20 +443,29 @@ function renderExec() {
   const n = plan.actions.length;
   $('#exec-sub').textContent = plan.part + ' · ' + n + ' 个动作 · 共 ' + totalSets(plan) + ' 组';
   const firstEq = plan.actions[0] && plan.actions[0].equipId;
+  const doneN = doneActions(ex) + (ex.warmupDone ? 1 : 0);
+  const totalN = n + 1; // 含热身步骤
   $('#exec-list').innerHTML = `
+    <div class="card exec-progress">
+      <div class="progress-row"><span class="progress-label">已完成动作</span><span class="progress-num">${doneN}/${totalN}</span></div>
+      <div class="progress-track"><div class="progress-fill" style="width:${Math.round(doneN / totalN * 100)}%"></div></div>
+    </div>
     <div class="action-row ${ex.warmupDone ? 'done' : ''}">
       <div class="action-head">
         <div><div class="action-name">第一步：热身激活</div>
         <div class="action-meta">预计 5 分钟 · 心率微微上升即可</div></div>
         <button class="teach-link" type="button" data-eqid="${firstEq}">教学 &gt;</button>
       </div>
-      <ul class="warmup-pts">
-        <li>目标肌群：${esc(WARMUP_TEXT[plan.part] || plan.part + '相关肌群')}，激活关节与肌肉</li>
-        <li>方式：动态拉伸 + 轻重量器械试做</li>
+      <ul class="warmup-pts">${plan.warmup
+        ? `<li>目标肌群：${esc(plan.warmup.targets || plan.part + '相关肌群')}</li>
+        <li>方式：${esc(plan.warmup.method || '动态拉伸 + 轻重量器械试做')}</li>
+        ${plan.warmup.standard ? `<li>热身标准：${esc(plan.warmup.standard)}</li>` : ''}`
+        : `<li>目标肌群：${esc(WARMUP_TEXT[plan.part] || plan.part + '相关肌群')}，激活关节与肌肉</li>
+        <li>方式：动态拉伸 + 轻重量器械试做</li>`}
       </ul>
       <div class="act-foot">
         ${ex.warmupDone
-          ? '<span class="act-check">已完成 ✓</span>'
+          ? '<span class="act-check">✓ 已完成</span>'
           : '<button class="btn-act lite" type="button" data-warmup="1">完成热身</button>'}
       </div>
     </div>` + plan.actions.map((a, i) => {
@@ -428,16 +475,34 @@ function renderExec() {
       <div class="action-row ${rec ? 'done' : ''}">
         <div class="action-head">
           <div><div class="action-name">第${i + 2}步：${esc(a.action)}</div>
-          <div class="action-meta">${esc(eq ? eq.name : '')} · ${a.sets} 组×${a.reps} 次</div></div>
-          <button class="teach-link" type="button" data-eqid="${a.equipId}">教学 &gt;</button>
+          <div class="action-meta">${esc(eq ? eq.name : '')} · ${esc(a.repsTxt || (a.sets + ' 组×' + a.reps + ' 次'))}</div></div>
+          ${a.equipId ? `<button class="teach-link" type="button" data-eqid="${a.equipId}">教学 &gt;</button>` : ''}
         </div>
+        ${a.stage ? `<div class="stage-tag">${esc(a.stage)}</div>` : ''}
+        ${(a.focus || a.equipText || a.rest || a.knee) ? `<ul class="act-info">
+          ${a.focus ? `<li><i>目标肌群</i>${esc(a.focus)}</li>` : ''}
+          ${a.equipText ? `<li><i>器械</i>${esc(a.equipText)}</li>` : ''}
+          ${a.knee ? `<li><i>膝盖友好点</i>${esc(a.knee)}</li>` : ''}
+          ${a.rest ? `<li><i>组间休息</i>${esc(a.rest)}</li>` : ''}
+        </ul>` : ''}
+        ${a.detail ? `<p class="act-detail"><i>关键细节</i>${esc(a.detail)}</p>` : ''}
         <div class="act-foot">
           ${rec
-            ? `<span class="act-check">已完成 ✓</span><span class="rec-line">实际完成 ${rec.sets} 组 × ${rec.weight}kg</span>`
+            ? `<span class="act-check">✓ 已完成</span><span class="rec-line">实际完成 ${rec.sets} 组 × ${rec.weight > 0 ? rec.weight + 'kg' : '自重'}</span>`
             : '<button class="btn-act" type="button" data-idx="' + i + '">完成</button>'}
         </div>
       </div>`;
-  }).join('');
+  }).join('')
+    + ((plan.stretch && plan.stretch.length) ? `
+    <div class="action-row stretch-row">
+      <div class="action-head">
+        <div><div class="action-name">第${n + 2}步：拉伸收尾</div>
+        <div class="action-meta">训练后完成 · 缓慢拉伸至微酸胀感，不要弹振</div></div>
+      </div>
+      <ul class="stretch-list">${plan.stretch.map(s => `
+        <li><b>${esc(s.action)}</b><span>${esc(s.target || '')}${s.time ? ' · ' + esc(s.time) : ''}</span></li>`).join('')}
+      </ul>
+    </div>` : '');
 }
 
 /* 组次重量录入弹层：默认按方案模板预填（组数=计划组数，重量=动作默认配置）；
@@ -453,7 +518,7 @@ function openRecModal(i) {
   const a = plan.actions[i];
   $('#rec-title').textContent = a.action;
   $('#rec-sets').value = a.sets;
-  $('#rec-weight').value = a.w != null ? a.w : '';
+  $('#rec-weight').value = 5; // 重量统一默认 5kg，可输入小数自行调整
   validateRec();
   $('#rec-modal').classList.remove('hidden');
 }
@@ -461,7 +526,7 @@ function openRecModal(i) {
 function validateRec() {
   const s = Number($('#rec-sets').value), w = Number($('#rec-weight').value);
   const ok = $('#rec-sets').value !== '' && $('#rec-weight').value !== ''
-    && Number.isInteger(s) && s >= 1 && w > 0;
+    && Number.isInteger(s) && s >= 1 && w >= 0; // 重量 0 = 自重动作（靠墙静蹲/蚌式开合等），允许录入
   $('#rec-confirm').disabled = !ok;
   return ok;
 }
@@ -560,9 +625,12 @@ function openReserve(from) {
 function renderReserve() {
   $('#coach-list').innerHTML = RESERVE_COACHES.map(c => `
     <button class="coach-card ${resvCoach === c.id ? 'selected' : ''}" type="button" data-id="${c.id}">
-      <span class="cc-photo">头像区</span>
-      <span class="cc-name">${esc(c.name)}</span>
-      <span class="cc-tags">${c.tags.map(t => `<span class="tag">${esc(t)}</span>`).join('')}</span>
+      <span class="cc-photo"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="8.2" r="3.4"/><path d="M5.5 19.5a6.5 6.5 0 0 1 13 0"/></svg></span>
+      <span class="cc-main">
+        <span class="cc-name">${esc(c.name)}</span>
+        <span class="cc-course">${esc(c.course)}</span>
+        <span class="cc-tags">${c.tags.map(t => `<span class="tag">${esc(t)}</span>`).join('')}</span>
+      </span>
     </button>`).join('');
   $('#picked-coach').textContent = resvCoach ? RESERVE_COACHES.find(c => c.id === resvCoach).name : '未选择';
   $('#btn-submit-resv').disabled = !resvCoach;
@@ -681,10 +749,18 @@ function gatherLogDays() { // dateStr -> {solo:[{action,sets,weight}]|null, coac
 function renderDayDetail(m) {
   const parts = [];
   if (m.solo && m.solo.length) {
+    // 明细与今日训练保持一致：当天动作按方案展示组数次数与重量（历史日期/未匹配动作回退录入值）
+    const plan = selDate === todayStr() ? getPlan() : null;
     parts.push(`
       <div class="day-card">
         <div class="day-cap">${ICON_SOLO}自由训练</div>
-        ${m.solo.map(r => `<div class="day-row">${esc(r.action)} × ${r.sets} 组 × ${r.weight}kg</div>`).join('')}
+        ${m.solo.map(r => {
+          const s = plan ? plan.actions.find(a => a.action === r.action) : null;
+          const val = s
+            ? `${s.repsTxt || (s.sets + '组 × ' + s.reps + '次')} · ${s.w > 0 ? s.w + 'kg' : '自重'}`
+            : `${r.sets} 组 × ${r.weight > 0 ? r.weight + 'kg' : '自重'}`;
+          return `<div class="day-row"><span>${esc(r.action)}</span><b class="day-val">${val}</b></div>`;
+        }).join('')}
       </div>`);
   }
   if (m.coach) {
@@ -694,10 +770,12 @@ function renderDayDetail(m) {
       <div class="day-card">
         <div class="day-cap">${ICON_COACH}教练课</div>
         <div class="coach-card">
-          <span class="cc-photo">头像区</span>
-          <span class="cc-name">${esc(m.coach.name)}教练</span>
-          <span class="dd-course">${esc(m.coach.course)}</span>
-          <span class="cc-tags">${tags.map(t => `<span class="tag">${esc(t)}</span>`).join('')}</span>
+          <span class="cc-photo"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="8.2" r="3.4"/><path d="M5.5 19.5a6.5 6.5 0 0 1 13 0"/></svg></span>
+          <span class="cc-main">
+            <span class="cc-name">${esc(m.coach.name)}教练</span>
+            <span class="dd-course">${esc(m.coach.course)}</span>
+            <span class="cc-tags">${tags.map(t => `<span class="tag">${esc(t)}</span>`).join('')}</span>
+          </span>
         </div>
       </div>`);
   }
@@ -721,10 +799,12 @@ function renderLog() {
   let detail = '';
   if (selDate) {
     const [, mm, dd] = selDate.split('-');
+    const d0 = map[selDate] || {};
+    const cnt = (d0.solo ? d0.solo.length : 0) + (d0.coach ? 1 : 0);
     detail = `
       <div class="day-detail">
-        <div class="day-date">${Number(mm)} 月 ${Number(dd)} 日</div>
-        ${renderDayDetail(map[selDate] || {})}
+        <div class="day-date">${Number(mm)} 月 ${Number(dd)} 日<span class="day-count">${cnt ? cnt + ' 项记录' : '休息'}</span></div>
+        ${renderDayDetail(d0)}
       </div>`;
   }
   $('#log-body').innerHTML = `
@@ -754,18 +834,25 @@ $('#log-body').addEventListener('click', e => {
 function renderMine() {
   $('#mine-body').innerHTML = `
   <div class="me-card">
-    <span class="me-avatar">头像
-      <i class="me-cam"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8h3l2-2h6l2 2h3v11H4z"/><circle cx="12" cy="13" r="3"/></svg></i>
-    </span>
+    <span class="me-avatar"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="8.2" r="3.4"/><path d="M5.5 19.5a6.5 6.5 0 0 1 13 0"/></svg></span>
     <span class="me-info">
-      <span class="me-id">U0946 <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 20h4L19.5 8.5a2.1 2.1 0 0 0-3-3L5 17z"/><path d="M13.5 6.5l3 3"/></svg></span>
+      <span class="me-id">U0946</span>
       <span class="me-phone">183-4605-0946</span>
+      <span class="me-chip">年度会员</span>
     </span>
+    <span class="me-edit" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19.5 8.5a2.1 2.1 0 0 0-3-3L5 17z"/><path d="M13.5 6.5l3 3"/></svg></span>
   </div>
   <div class="me-grid">${MINE_DATA.map(m => `
-    <button class="me-item" type="button" data-title="${m.title}"><span class="me-ico">${m.icon}</span><span>${m.title}</span></button>`).join('')}
+    <button class="me-item" type="button" data-title="${m.title}">
+      <span class="me-ico">${m.icon}</span>
+      <span class="me-tt">${m.title}</span>
+      <span class="me-val">${fmtCnDate(m.main)}</span>
+      ${m.sub ? `<span class="me-note">${m.sub}</span>` : ''}
+    </button>`).join('')}
   </div>`;
 }
+/* me-val 日期格式化：「2027 年 10 月 11 日」→「2027-10-11」（MINE_DATA 在 data.js，展示层转换） */
+const fmtCnDate = s => String(s).replace(/(\d{4}) 年 (\d{1,2}) 月 (\d{1,2}) 日/g, (_, y, mo, d) => `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`);
 renderMine();
 $('#mine-body').addEventListener('click', e => {
   const b = e.target.closest('.me-item'); if (!b) return;
@@ -781,14 +868,25 @@ window.addEventListener('appdata', () => {
 });
 
 /* ---------- 启动：默认落首页 Tab ---------- */
-/* 窄窗口等比缩放：<500px 时手机壳保持 390 设计宽，按窗口宽 scale，铺满且布局不变形（真实手机上无此窗口问题） */
+/* 窗口适配：手机壳保持 390 设计宽等比缩放，铺满且布局不变形（真实手机上无此窗口问题）
+   ① 窄窗口/真机（<500px）：按宽 scale，高度弹性铺满（任何屏幕比例都完整可见）；
+   ② 大窗口且高≥860（桌面/iPad 竖屏）：原尺寸直显；
+   ③ 其他大窗口（预览面板/横屏/折叠屏）：壳宽取 min(窗口宽/390, 窗口高/620)，
+      620=最小可读视觉高——比锁死 844 占比更高，避免宽面板两侧大片留黑；横屏时自动缩小居中，不裁切 */
 function fitPhone() {
   const phone = $('#phone');
   const vw = document.documentElement.clientWidth;
-  if (vw >= 500) { phone.style.transform = ''; phone.style.width = ''; phone.style.height = ''; return; }
-  const s = vw / 390;
+  const vh = window.innerHeight;
+  if (vw >= 500 && vh >= 860) { phone.style.transform = ''; phone.style.width = ''; phone.style.height = ''; document.body.style.alignItems = ''; return; }
+  if (vw < 500) {
+    var s = vw / 390;
+  } else {
+    s = Math.min(vw / 390, vh / 620);
+  }
+  // 缩放后视觉高度恰为视口高：body 改贴顶，抵消其垂直居中（否则手机壳顶部会被推出视口外）
+  document.body.style.alignItems = 'flex-start';
   phone.style.width = '390px';
-  phone.style.height = (window.innerHeight / s) + 'px'; // 高度除以缩放补偿，视觉上铺满整屏
+  phone.style.height = (vh / s) + 'px'; // 高度除以缩放补偿，视觉上铺满整屏
   phone.style.transform = 'scale(' + s + ')';
   phone.style.transformOrigin = 'top center';
 }
@@ -796,6 +894,7 @@ window.addEventListener('resize', fitPhone);
 fitPhone();
 
 AppStore.init(); // M4：拉取后端配置（教练/器械/档案），到达后经 appdata 事件刷新视图；失败回退内置默认值
+fetchPlans(); // M5：拉取后台「方案配置」（/api/plans），生成今日方案时优先使用；失败回退内置模板
 
 renderEquipGroups($('#list-body'), ''); // 识别 Tab·列表子 Tab 初始数据
 showTab('home');

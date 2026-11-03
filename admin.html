@@ -4,10 +4,12 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>健身器械助手 · 管理后台</title>
+<link rel="stylesheet" href="css/tokens.css"/>
 <link rel="stylesheet" href="css/admin.css"/>
 </head>
 <body>
 <header class="topbar">
+  <span class="logo" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M7 8v8M17 8v8M4 10v4M20 10v4M7 12h10"/></svg></span>
   <h1>健身器械助手 · 管理后台</h1>
   <span class="topbar-note">数据存储：gym-app/data/*.json（本地轻量模拟后端）· 用户端改动自动同步</span>
 </header>
@@ -17,6 +19,7 @@
   <button class="tab" data-pane="equipments" type="button">器械与教程</button>
   <button class="tab" data-pane="profile" type="button">用户数据</button>
   <button class="tab" data-pane="lessons" type="button">课程记录</button>
+  <button class="tab" data-pane="plans" type="button">方案配置</button>
 </nav>
 
 <main>
@@ -55,6 +58,8 @@
       </div>
       <div class="form-row">
         <label>小红书外链<input id="equip-jump" type="url" placeholder="https://…"/></label>
+        <label>发力肌群<input id="equip-muscles" type="text" placeholder="主发力，逗号分隔（详情页标红）"/></label>
+        <label>辅助发力<input id="equip-sub" type="text" placeholder="辅助肌群，逗号分隔（详情页标橙）"/></label>
         <label class="grow">安全提示<input id="equip-safety" type="text" placeholder="加片之前先加控制，冲重量之前先问教练"/></label>
       </div>
       <div class="form-actions">
@@ -106,7 +111,26 @@
     <table class="tbl"><thead><tr><th>日期</th><th>教练</th><th>课程</th><th>提交时间</th></tr></thead>
       <tbody id="lesson-tbody"><tr><td colspan="4" class="empty">加载中…</td></tr></tbody></table>
   </section>
+  <!-- 方案配置（执行方案：热身 / 训练步骤 / 拉伸收尾） -->
+  <section class="pane hidden" id="pane-plans">
+    <div class="pane-head"><h2>执行方案配置</h2><span class="note">按部位配置热身 · 训练步骤 · 拉伸收尾 · 用户端重新「生成今日方案」即生效</span></div>
+    <div id="plans-editor"><table class="tbl"><tbody><tr><td class="empty">加载中…</td></tr></tbody></table></div>
+    <div class="form-actions plans-actions">
+      <button class="btn primary" id="plans-save" type="button">保存方案配置</button>
+      <span class="note">保存后用户端「选部位 → 生成今日方案」即按新配置执行；未配置的部位沿用内置模板</span>
+    </div>
+  </section>
 </main>
+
+<footer class="data-bar">
+  <span class="data-chips">
+    <i class="chip">coaches.json</i>
+    <i class="chip">equipments.json</i>
+    <i class="chip">users.json</i>
+    <i class="chip">lessons.json</i>
+  </span>
+  <span class="data-note">本地轻量模拟后端 · 用户端改动自动同步</span>
+</footer>
 
 <div id="admin-toast" class="hidden"></div>
 
