@@ -7,7 +7,7 @@
    - 反馈区最多 2 条：优先级 退步＞停滞＞进步＞首次记录，同优先级取最近训练动作
    - 频率与恢复区最多 2 条：恢复类优先于练频率，恢复类之间无休＞同肌群连练
      （同肌群判断：AI 链路由模型基于 7 天每日训练数据判断；本地兜底按动作名关键词映射）
-   文案链路：LLM 按示例模板生成（serve.py /proxy/llm 代理，Key 在 config.local.js LLM_KEYS）
+   文案链路：LLM 按示例模板生成（后端 /api/llm/summary 代理智谱，Key 由服务端 ZHIPU_API_KEY 持有）
      → 未配置/超时/失败静默降级本地模板引擎，不弹 Toast
    刷新：每次进入首页实时聚合（showTab/visibilitychange）；AI 文案当日缓存（gym_sum_ai_日期），
      录入新记录后由 app.js 调 invalidateSummaryCache() 失效 */
@@ -172,9 +172,13 @@ function localFbText(f) {
   return '';
 }
 
-/* ---------- AI 文案链路（/proxy/llm → 智谱 OpenAI 兼容接口） ---------- */
+/* ---------- AI 文案链路（/api/llm/summary → 后端代理智谱，Key 已下沉服务端） ----------
+   服务端持有 ZHIPU_API_KEY 并转发到智谱 OpenAI 兼容接口；前端不再持有 Key。
+   → 服务端未配置 Key / 无后端环境时请求失败，静默降级本地模板引擎，不弹 Toast */
 function sumAIAvailable() {
-  return typeof window.LLM_KEYS !== 'undefined' && window.LLM_KEYS && !!window.LLM_KEYS.API_KEY;
+  // Key 已下沉服务端：不再依赖前端 window.LLM_KEYS，始终尝试调用后端；
+  // 服务端未配置 Key 或无后端时请求会失败 → 由既有 catch 静默降级本地模板
+  return true;
 }
 
 async function fetchAISummaryCopy(data) {
@@ -191,9 +195,9 @@ async function fetchAISummaryCopy(data) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), SUM_AI_TIMEOUT);
   try {
-    const res = await fetch('/proxy/llm', {
+    const res = await fetch('/api/llm/summary', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + window.LLM_KEYS.API_KEY },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: SUM_LLM_MODEL,
         messages: [

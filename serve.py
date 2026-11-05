@@ -328,6 +328,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     # ---------- 路由 ----------
     def do_GET(self):
+        if self.path.startswith('/@vite/'):  # Trae 预览面板注入的 HMR 客户端：本地无此文件，回空脚本避免控制台 404 报错
+            return self.reply(200, b'/* vite-client stub */', 'application/javascript')
         if self.path.startswith('/api/'):
             self.api_get()
         elif self.path.startswith('/proxy/'):
@@ -501,8 +503,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
 
 if __name__ == '__main__':
+    HOST = '127.0.0.1'
     if len(sys.argv) > 1:  # 可选端口参数：python3 serve.py 8788
         PORT = int(sys.argv[1])
-    httpd = http.server.ThreadingHTTPServer(('127.0.0.1', PORT), Handler)
-    print('serving http://127.0.0.1:%d  (static: %s)' % (PORT, ROOT))
+    if len(sys.argv) > 2 and sys.argv[2] == '0.0.0.0':  # 可选绑所有网卡：手机/其他设备可访问
+        HOST = '0.0.0.0'
+    httpd = http.server.ThreadingHTTPServer((HOST, PORT), Handler)
+    print('serving http://%s:%d  (static: %s)' % (HOST, PORT, ROOT))
     httpd.serve_forever()
