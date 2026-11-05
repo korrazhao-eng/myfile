@@ -10,6 +10,8 @@
    | LLM_MODEL | glm-4-flash | /api/llm/summary 默认模型 |
    | BAIDU_UPSTREAM | https://aip.baidubce.com | /proxy/* 透传上游（百度智能云） |
    | DB_PATH | server/data/gym.db | SQLite 数据库文件 |
+   | DB_DRIVER | auto | SQLite 驱动：auto / better-sqlite3 / node:sqlite（auto=优先 better-sqlite3，绑定不可用时回退 Node 内置） |
+   | DB_JOURNAL_MODE | 空 | 日志模式：空=自动（WAL → TRUNCATE → MEMORY 依次尝试） |
    | STATIC_ROOT | gym-app/ | 静态托管根目录（与 serve.py 行为一致） |
    | LEGACY_DATA_DIR | gym-app/data | 存量 JSON 数据目录（迁移脚本读取） |
    | JSON_LIMIT | 10mb | 请求体大小上限 | */
@@ -33,6 +35,8 @@ const config = {
   LLM_MODEL: (process.env.LLM_MODEL || 'glm-4-flash').trim(),
   BAIDU_UPSTREAM: (process.env.BAIDU_UPSTREAM || 'https://aip.baidubce.com').replace(/\/+$/, ''),
   DB_PATH: process.env.DB_PATH || path.join(SERVER_ROOT, 'data', 'gym.db'),
+  DB_DRIVER: (process.env.DB_DRIVER || 'auto').trim(),
+  DB_JOURNAL_MODE: (process.env.DB_JOURNAL_MODE || '').trim(),
   STATIC_ROOT: process.env.STATIC_ROOT || APP_ROOT,
   LEGACY_DATA_DIR: process.env.LEGACY_DATA_DIR || path.join(APP_ROOT, 'data'),
   JSON_LIMIT: process.env.JSON_LIMIT || '10mb',

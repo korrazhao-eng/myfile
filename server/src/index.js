@@ -25,13 +25,19 @@ function bootstrapData() {
 }
 
 function main() {
-  db.open();
+  try {
+    db.open();
+  } catch (e) {
+    console.error(`启动失败：${e.message}`);
+    process.exit(1);
+  }
   bootstrapData();
   const app = createApp();
   const server = app.listen(config.PORT, config.HOST, () => {
     console.log(`健身器械助手后端已启动  http://${config.HOST}:${config.PORT}`);
     console.log(`  静态资源   ${config.STATIC_ROOT}`);
     console.log(`  数据库     ${config.DB_PATH}`);
+    console.log(`  存储驱动   ${db.driverName}（日志模式 ${db.journalMode}）`);
     console.log(`  管理鉴权   ${config.ADMIN_TOKEN ? '已开启 (X-Admin-Token)' : '未开启 (ADMIN_TOKEN 未设置)'}`);
     console.log(`  LLM 代理   ${config.ZHIPU_API_KEY ? '已配置 (服务端持有 Key)' : '未配置 (ZHIPU_API_KEY 未设置)'}`);
   });
