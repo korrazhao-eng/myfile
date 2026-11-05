@@ -37,10 +37,12 @@ function muscleOf(action) {
 }
 
 /* 聚合全量训练数据：date -> {solo:[{action,sets,weight}], coach:{name,course}|null}
-   演示数据（DEMO_LOG_DAYS，动态锚定今天-N 天）+ localStorage 真实记录（真实记录覆盖同日演示数据） */
+   后台训练日志（window.LOG_DB，app.js 启动拉取 /api/logs）+ localStorage 真实记录（真实记录覆盖同日）
+   后台数据到达前回退 data.js 内置演示数据 */
 function gatherAllDays() {
   const map = {};
-  for (const [date, m] of Object.entries(DEMO_LOG_DAYS)) {
+  const src = window.LOG_DB || DEMO_LOG_DAYS;
+  for (const [date, m] of Object.entries(src)) {
     map[date] = { solo: (m.solo || []).slice(), coach: m.coach || null };
   }
   for (let i = 0; i < localStorage.length; i++) {

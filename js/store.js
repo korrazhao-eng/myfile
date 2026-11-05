@@ -66,12 +66,32 @@
     return true;
   }
 
+  /* 我的页会员卡：从 /api/users 取当前用户（u1）的编号/手机号/会员等级 */
+  function fetchMe() {
+    fetch('/api/users')
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(function (users) {
+        if (!Array.isArray(users)) return;
+        var me = users.find(function (u) { return u.id === 'u1'; }) || users[0];
+        if (me) {
+          window.ME_CARD = {
+            no: me.memberNo || 'U0946',
+            phone: me.phone || '183-4605-0946',
+            level: me.memberLevel || '年度会员'
+          };
+          window.dispatchEvent(new CustomEvent('appdata'));
+        }
+      })
+      .catch(function () { /* 无后端环境：保留内置默认值 */ });
+  }
+
   function init() {
     if (!window.EQUIP_GROUPS) return; // data.js 未加载时不动
     fetch('/api/bootstrap')
       .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
       .then(function (data) { applyBootstrap(data); })
       .catch(function () { /* 无后端环境：保留内置默认值 */ });
+    fetchMe();
   }
 
   /* 上报：训练日志 / 教练课预约。失败静默（本地 localStorage 仍是数据主源） */

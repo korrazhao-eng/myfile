@@ -258,6 +258,8 @@ $('#user-tbody').addEventListener('click', async e => {
       $('#user-form-title').textContent = '编辑用户：' + u.nickname;
       $('#user-nickname').value = u.nickname || '';
       $('#user-phone').value = u.phone || '';
+      $('#user-memberno').value = u.memberNo || '';
+      $('#user-level').value = u.memberLevel || '';
       $('#user-visit').value = u.visitAt || '';
       $('#user-coach').value = u.coach || '';
       $('#user-heart').value = u.heart ?? '';
@@ -293,6 +295,8 @@ $('#user-save').addEventListener('click', async () => {
   const body = {
     nickname,
     phone: $('#user-phone').value.trim(),
+    memberNo: $('#user-memberno').value.trim(),
+    memberLevel: $('#user-level').value.trim(),
     visitAt: $('#user-visit').value.trim(),
     coach: $('#user-coach').value,
     heart,
@@ -316,6 +320,7 @@ $('#user-cancel').addEventListener('click', () => {
   $('#user-cancel').classList.add('hidden');
 });
 
+/* ================= 训练日志（上报展示 + 手动维护） ================= */
 async function loadLogs() {
   const logs = await getList('logs');
   const sorted = [...logs].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
@@ -323,9 +328,81 @@ async function loadLogs() {
     <tr>
       <td>${esc(l.date || '')}</td>
       <td>${l.type === 'coach' ? '教练课' : '自由训练'}</td>
-      <td>${(l.records || []).map(r => `${esc(r.action)} ${r.sets}组×${r.weight > 0 ? r.weight + 'kg' : '自重'}`).join(' ／ ') || '—'}</td>
-    </tr>`).join('') || '<tr><td colspan="3" class="empty">暂无上报日志（用户端完成动作录入后同步）</td></tr>';
+      <td>${l.type === 'coach'
+        ? esc(((l.records || [])[0] || {}).coach || '') + (((l.records || [])[0] || {}).course ? ' · ' + esc(l.records[0].course) : '')
+        : (l.records || []).map(r => `${esc(r.action)} ${r.sets}组×${r.weight > 0 ? r.weight + 'kg' : '自重'}`).join(' ／ ') || '—'}</td>
+      <td class="w-op"><button class="btn mini danger" data-log-del="${esc(l.date)}" type="button">删除</button></td>
+    </tr>`).join('') || '<tr><td colspan="4" class="empty">暂无训练日志（用户端完成动作录入后同步，或在上方新增）</td></tr>';
 }
+
+function logRecRow() {
+  const div = document.createElement('div');
+  div.className = 'form-row log-rec-row';
+  div.innerHTML = `
+    <label>动作名称<input class="lr-action" type="text" placeholder="如：高位下拉"/></label>
+    <label>组数<input class="lr-sets" type="number" min="1" step="1" placeholder="4"/></label>
+    <label>重量（kg，0=自重）<input class="lr-weight" type="number" min="0" step="0.5" placeholder="40"/></label>
+    <button class="btn mini danger" data-row-del type="button" style="align-self:end">删</button>`;
+  return div;
+}
+
+$('#log-add').addEventListener('click', () => {
+  $('#log-form').classList.remove('hidden');
+  $('#log-form-title').textContent = '新增训练记录';
+  $('#log-date').value = todayStr();
+  $('#log-type').value = 'solo';
+  $('#log-solo-rows').innerHTML = ''; $('#log-solo-rows').appendChild(logRecRow());
+  $('#log-coach-name').value = ''; $('#log-coach-course').value = '';
+  $('#log-type').dispatchEvent(new Event('change'));
+  $('#log-form').scrollIntoView({ behavior: 'smooth', block: 'center' });
+});
+
+$('#log-type').addEventListener('change', () => {
+  const coach = $('#log-type').value === 'coach';
+  $('#log-solo-rows').classList.toggle('hidden', coach);
+  $('#log-coach-rows').classList.toggle('hidden', !coach);
+  $('#log-row-add').classList.toggle('hidden', coach);
+});
+
+$('#log-row-add').addEventListener('click', () => $('#log-solo-rows').appendChild(logRecRow()));
+$('#log-form').addEventListener('click', e => {
+  const del = e.target.closest('[data-row-del]');
+  if (del) del.closest('.log-rec-row').remove();
+});
+
+$('#log-save').addEventListener('click', async () => {
+  const date = $('#log-date').value;
+  if (!date) { toast('请选择日期', false); return; }
+  let body;
+  if ($('#log-type').value === 'coach') {
+    const coach = $('#log-coach-name').value.trim();
+    if (!coach) { toast('请填写教练姓名', false); return; }
+    body = { date, type: 'coach', records: [{ action: '教练课', coach, course: $('#log-coach-course').value.trim() }] };
+  } else {
+    const records = [...document.querySelectorAll('#log-solo-rows .log-rec-row')].map(row => ({
+      action: row.querySelector('.lr-action').value.trim(),
+      sets: parseInt(row.querySelector('.lr-sets').value, 10) || 1,
+      weight: Number(row.querySelector('.lr-weight').value) || 0
+    })).filter(r => r.action);
+    if (!records.length) { toast('请至少填写一行有效动作', false); return; }
+    body = { date, type: 'solo', records };
+  }
+  try {
+    await saveItem('logs', body); // date upsert：同日覆盖
+    toast('训练记录已保存');
+    $('#log-form').classList.add('hidden');
+    loadLogs();
+  } catch (err) { toast('保存失败：' + err.message, false); }
+});
+$('#log-cancel').addEventListener('click', () => $('#log-form').classList.add('hidden'));
+
+$('#log-tbody').addEventListener('click', async e => {
+  const del = e.target.closest('[data-log-del]');
+  if (!del) return;
+  if (!confirm(`确定删除 ${del.dataset.logDel} 的训练记录？用户端日志页与首页摘要将同步移除。`)) return;
+  try { await deleteItem('logs', del.dataset.logDel); toast('记录已删除'); loadLogs(); }
+  catch (err) { toast('删除失败：' + err.message, false); }
+});
 
 /* ================= 课程记录 ================= */
 async function loadLessons() {

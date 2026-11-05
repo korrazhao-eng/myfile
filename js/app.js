@@ -717,9 +717,30 @@ const ICON_COACH = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" 
 let calY = new Date().getFullYear(), calM = new Date().getMonth(); // 日历当前展示年月（0-based）
 let selDate = null; // 当前展开详情的日期（YYYY-MM-DD）
 
-function gatherLogDays() { // dateStr -> {solo:[{action,sets,weight}]|null, coach:{name,course}|null}；真实记录 + 演示数据合并
+/* M5：后台训练日志（date -> {solo:[{action,sets,weight}], coach:{name,course}|null}）
+   到达前为 null（gatherLogDays/gatherAllDays 回退 data.js 内置演示数据），到达后日志页/摘要卡换源 */
+window.LOG_DB = null;
+function fetchLogs() {
+  fetch('/api/logs').then(r => { if (!r.ok) throw new Error(r.status); return r.json(); }).then(list => {
+    const db = {};
+    (Array.isArray(list) ? list : []).forEach(l => {
+      if (!l || !l.date) return;
+      if (l.type === 'coach') {
+        const r0 = (l.records || [])[0] || {};
+        db[l.date] = { solo: [], coach: { name: r0.coach || r0.action || '教练课', course: r0.course || '' } };
+      } else {
+        db[l.date] = { solo: (l.records || []).map(r => ({ action: r.action, sets: r.sets, weight: r.weight })), coach: null };
+      }
+    });
+    window.LOG_DB = db;
+    renderLog(); // 日志页若在当前 tab 即时刷新；切 tab 时也会重新渲染
+  }).catch(() => { /* 无后端环境：保留内置演示数据 */ });
+}
+
+function gatherLogDays() { // dateStr -> {solo:[{action,sets,weight}]|null, coach:{name,course}|null}；后台数据 + 真实记录合并（真实覆盖同日）
   const map = {};
-  for (const [date, m] of Object.entries(DEMO_LOG_DAYS)) {
+  const src = window.LOG_DB || DEMO_LOG_DAYS; // 后台数据到达前回退内置演示
+  for (const [date, m] of Object.entries(src)) {
     map[date] = { solo: m.solo || null, coach: m.coach || null };
   }
   for (let i = 0; i < localStorage.length; i++) {
@@ -836,9 +857,9 @@ function renderMine() {
   <div class="me-card">
     <span class="me-avatar"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="8.2" r="3.4"/><path d="M5.5 19.5a6.5 6.5 0 0 1 13 0"/></svg></span>
     <span class="me-info">
-      <span class="me-id">U0946</span>
-      <span class="me-phone">183-4605-0946</span>
-      <span class="me-chip">年度会员</span>
+      <span class="me-id">${(window.ME_CARD || {}).no || 'U0946'}</span>
+      <span class="me-phone">${(window.ME_CARD || {}).phone || '183-4605-0946'}</span>
+      <span class="me-chip">${(window.ME_CARD || {}).level || '年度会员'}</span>
     </span>
     <span class="me-edit" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19.5 8.5a2.1 2.1 0 0 0-3-3L5 17z"/><path d="M13.5 6.5l3 3"/></svg></span>
   </div>
@@ -895,6 +916,7 @@ fitPhone();
 
 AppStore.init(); // M4：拉取后端配置（教练/器械/档案），到达后经 appdata 事件刷新视图；失败回退内置默认值
 fetchPlans(); // M5：拉取后台「方案配置」（/api/plans），生成今日方案时优先使用；失败回退内置模板
+fetchLogs(); // M5：拉取后台「训练日志」（/api/logs），日志页/摘要卡历史数据改为后台可配置；失败回退内置演示数据
 
 renderEquipGroups($('#list-body'), ''); // 识别 Tab·列表子 Tab 初始数据
 showTab('home');

@@ -313,6 +313,8 @@ const DEFAULTS = {
       "id": "u1",
       "nickname": "曹操",
       "phone": "13812345678",
+      "memberNo": "U0946",
+      "memberLevel": "年度会员",
       "visitAt": "2026-10-25 09:30",
       "coach": "田文镜",
       "heart": "最近一次 72 次/分（2026-10-11）",
