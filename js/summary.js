@@ -23,16 +23,36 @@ const SUM_AI_RETRY_GAP = 60000;        // AI 失败后的静默重试间隔
 const sumDStr = d => { const p = n => String(n).padStart(2, '0'); return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()); };
 const sumRelDay = n => { const d = new Date(); d.setDate(d.getDate() - n); return sumDStr(d); };
 
-/* 动作名 → 肌群（仅本地模板引擎兜底用；测试期器械库 muscle 全是「背部」不可用） */
+/* 动作名 → 肌群：两级结构
+   ① 后台配置规则（window.MUSCLE_RULES，store.js 从 /api/mappings bootstrap 拉取原位替换）：
+      [{keyword, muscle}] 按数组顺序首个命中的关键词生效，后台未配置或全部未命中 → ②
+   ② 内置兜底规则（与后端 defaults.js 播种规则语义一致）；仍未命中 → 「全身」
+   仅本地模板引擎兜底用；测试期器械库 muscle 全是「背部」不可用 */
+window.MUSCLE_RULES = [
+  { keyword: '后束', muscle: '肩' }, { keyword: '侧平举', muscle: '肩' },
+  { keyword: '前平举', muscle: '肩' }, { keyword: '推肩', muscle: '肩' }, { keyword: '肩', muscle: '肩' },
+  { keyword: '直臂', muscle: '背' }, { keyword: '下拉', muscle: '背' },
+  { keyword: '划船', muscle: '背' }, { keyword: '背', muscle: '背' },
+  { keyword: '腿', muscle: '腿' }, { keyword: '深蹲', muscle: '腿' }, { keyword: '髋', muscle: '腿' },
+  { keyword: '三头', muscle: '手臂' }, { keyword: '二头', muscle: '手臂' },
+  { keyword: '弯举', muscle: '手臂' }, { keyword: '下压', muscle: '手臂' }, { keyword: '臂', muscle: '手臂' },
+  { keyword: '夹胸', muscle: '胸' }, { keyword: '胸', muscle: '胸' }
+];
+
 function muscleOf(action) {
-  const rules = [
+  const s = String(action || '');
+  const rules = Array.isArray(window.MUSCLE_RULES) ? window.MUSCLE_RULES : [];
+  for (const r of rules) {
+    if (r && r.keyword && r.muscle && s.indexOf(r.keyword) !== -1) return r.muscle;
+  }
+  const fallback = [
     [/后束|侧平举|前平举|推肩|肩/, '肩'],
     [/直臂|下拉|划船|背/, '背'],
     [/腿|深蹲|髋/, '腿'],
     [/三头|二头|弯举|下压|臂/, '手臂'],
     [/胸|夹胸/, '胸']
   ];
-  for (const [re, m] of rules) if (re.test(action)) return m;
+  for (const [re, m] of fallback) if (re.test(s)) return m;
   return '全身';
 }
 

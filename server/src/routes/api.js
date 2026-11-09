@@ -39,6 +39,7 @@ router.get('/bootstrap', (req, res) => {
     coaches: repo.list('coaches'),
     equipments: repo.list('equipments'),
     profile: repo.list('profile'),
+    mappings: repo.list('mappings'),
   });
 });
 
@@ -85,9 +86,12 @@ router.post('/:coll', (req, res) => {
     return sendError(res, 405, `${coll} supports PUT list only`);
   }
   if (!isPlainObject(value)) return sendError(res, 400, 'invalid json body');
-  // coaches/equipments：name 必填
+  // coaches/equipments：name 必填；mappings：keyword + muscle 必填
   if ((coll === 'coaches' || coll === 'equipments') && !value.name) {
     return sendError(res, 400, 'name required');
+  }
+  if (coll === 'mappings' && (!value.keyword || !value.muscle)) {
+    return sendError(res, 400, 'keyword and muscle required');
   }
   // logs/lessons：按 date upsert —— 同日已存在则整体覆盖整条记录（防重复追加）
   if (repo.DATE_UPSERT.includes(coll) && typeof value.date === 'string' && value.date !== '') {

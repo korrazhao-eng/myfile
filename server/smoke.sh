@@ -125,7 +125,7 @@ fi
 section 'A. 启动与健康检查'
 api GET /api/bootstrap
 expect_code 'GET /api/bootstrap' 200
-expect_eq 'bootstrap 含 coaches/equipments/profile' 'coaches,equipments,profile' "$(jqf 'Object.keys(j).join(",")')"
+expect_eq 'bootstrap 含 coaches/equipments/profile/mappings' 'coaches,equipments,profile,mappings' "$(jqf 'Object.keys(j).join(",")')"
 expect_eq 'bootstrap.coaches 是数组' 'true' "$(jqf 'Array.isArray(j.coaches)')"
 expect_eq '响应带 no-cache 缓存头' 'true' "$(has "$HTTP_CACHE" 'no-cache')"
 expect_eq 'Content-Type 为 UTF-8 JSON' 'true' "$(has "$HTTP_CT" 'charset=utf-8')"

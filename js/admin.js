@@ -1,5 +1,5 @@
-/* 管理后台逻辑：教练 / 器械与教程 / 用户档案 / 训练日志 / 课程记录
-   数据层：/api/*（serve.py 轻量模拟后端，JSON 文件存储） */
+/* 管理后台逻辑：教练 / 器械与教程 / 用户档案 / 训练日志 / 课程记录 / 肌群映射
+   数据层：/api/*（server/ Node+Express+SQLite 后端） */
 'use strict';
 
 const $ = s => document.querySelector(s);
@@ -38,6 +38,7 @@ $('#tabs').addEventListener('click', e => {
   $('#pane-' + b.dataset.pane).classList.remove('hidden');
   if (b.dataset.pane === 'profile') { loadUsers(); loadLogs(); }
   if (b.dataset.pane === 'lessons') loadLessons();
+  if (b.dataset.pane === 'mappings') loadMappings();
 });
 
 /* ================= 教练管理 ================= */
@@ -118,7 +119,7 @@ async function loadEquips() {
             <td style="width:150px"><b>${esc(eq.name)}</b></td>
             <td><span class="cell-sub">教程视频</span><a class="link-cell" href="${esc(eq.videoUrl)}" target="_blank">${esc(eq.videoUrl)}</a>
                 <span class="cell-sub">小红书外链</span><a class="link-cell" href="${esc(eq.videoJump)}" target="_blank">${esc(eq.videoJump)}</a></td>
-            <td><span class="cell-sub">安全提示</span>${esc(eq.safety || '')}</td>
+            <td><span class="cell-sub">安全提示</span>${esc(eq.safety || '')}${eq.guide ? `<span class="cell-sub">使用要点</span>${esc(eq.guide)}` : ''}</td>
             <td class="w-op">
               <button class="btn mini" data-edit="${eq.id}" type="button">编辑</button>
               <button class="btn mini danger" data-del="${eq.id}" type="button">删除</button>
@@ -147,6 +148,7 @@ $('#equip-list').addEventListener('click', async e => {
       $('#equip-muscles').value = (eq.muscles || []).join(',');
       $('#equip-sub').value = (eq.subMuscles || []).join(',');
       $('#equip-safety').value = eq.safety || '';
+      $('#equip-guide').value = eq.guide || '';
       $('#equip-cancel').classList.remove('hidden');
       window.scrollTo({top: document.body.scrollHeight, behavior: 'smooth'});
     }
@@ -162,7 +164,8 @@ $('#equip-save').addEventListener('click', async () => {
     videoJump: $('#equip-jump').value.trim(),
     muscles: $('#equip-muscles').value.split(/[,，]/).map(s => s.trim()).filter(Boolean),
     subMuscles: $('#equip-sub').value.split(/[,，]/).map(s => s.trim()).filter(Boolean),
-    safety: $('#equip-safety').value.trim()
+    safety: $('#equip-safety').value.trim(),
+    guide: $('#equip-guide').value.trim()
   };
   try {
     await saveItem('equipments', body, equipEditing);
@@ -178,6 +181,7 @@ function resetEquipForm() {
   $('#equip-name').value = ''; $('#equip-video').value = ''; $('#equip-jump').value = '';
   $('#equip-muscles').value = ''; $('#equip-sub').value = '';
   $('#equip-safety').value = '';
+  $('#equip-guide').value = '';
   $('#equip-cancel').classList.add('hidden');
 }
 
@@ -404,6 +408,80 @@ $('#log-tbody').addEventListener('click', async e => {
   catch (err) { toast('删除失败：' + err.message, false); }
 });
 
+/* ================= 肌群映射（动作关键词 → 肌群） =================
+   数据：/api/mappings（顺序即优先级，用户端摘要卡恢复建议按此判定肌群） */
+let mapEditing = null;
+
+async function loadMappings() {
+  const list = await getList('mappings');
+  $('#map-tbody').innerHTML = list.map((m, i) => `
+    <tr>
+      <td class="cell-sub">${i + 1}</td>
+      <td><b>${esc(m.keyword)}</b></td>
+      <td><span class="tag-chip">${esc(m.muscle)}</span></td>
+      <td>
+        <button class="btn mini" data-map-up="${m.id}" type="button" ${i === 0 ? 'disabled' : ''}>上移</button>
+        <button class="btn mini" data-edit="${m.id}" type="button">编辑</button>
+        <button class="btn mini danger" data-del="${m.id}" type="button">删除</button>
+      </td>
+    </tr>`).join('') || '<tr><td colspan="4" class="empty">暂无映射规则，用户端将回退前端内置规则</td></tr>';
+}
+
+$('#map-tbody').addEventListener('click', async e => {
+  const del = e.target.closest('[data-del]');
+  const edit = e.target.closest('[data-edit]');
+  const up = e.target.closest('[data-map-up]');
+  try {
+    if (del) {
+      if (!confirm('确定删除该映射规则？相关动作将回退前端内置规则或「全身」。')) return;
+      await deleteItem('mappings', del.dataset.del);
+      toast('映射规则已删除'); loadMappings();
+    } else if (edit) {
+      const list = await getList('mappings');
+      const m = list.find(x => x.id === edit.dataset.edit);
+      if (!m) return;
+      mapEditing = m.id;
+      $('#map-form-title').textContent = '编辑映射规则';
+      $('#map-keyword').value = m.keyword || '';
+      $('#map-muscle').value = m.muscle || '全身';
+      $('#map-cancel').classList.remove('hidden');
+      window.scrollTo({top: document.body.scrollHeight, behavior: 'smooth'});
+    } else if (up) {
+      // 上移一位 = 调整优先级：按现有顺序全量 PUT 不可用（mappings 仅支持逐条 CRUD）→ 交换两条记录的 keyword/muscle
+      const list = await getList('mappings');
+      const idx = list.findIndex(x => x.id === up.dataset.mapUp);
+      if (idx <= 0) return;
+      const a = list[idx - 1], b = list[idx];
+      await Promise.all([
+        saveItem('mappings', { keyword: b.keyword, muscle: b.muscle }, a.id),
+        saveItem('mappings', { keyword: a.keyword, muscle: a.muscle }, b.id)
+      ]);
+      toast('优先级已调整');
+      loadMappings();
+    }
+  } catch (err) { toast('操作失败：' + err.message, false); }
+});
+
+$('#map-save').addEventListener('click', async () => {
+  const keyword = $('#map-keyword').value.trim();
+  if (!keyword) { toast('请填写动作关键词', false); return; }
+  const body = { keyword, muscle: $('#map-muscle').value };
+  try {
+    await saveItem('mappings', body, mapEditing);
+    toast(mapEditing ? '映射规则已更新' : '映射规则已新增');
+    resetMapForm(); loadMappings();
+  } catch (err) { toast('保存失败：' + err.message, false); }
+});
+$('#map-cancel').addEventListener('click', resetMapForm);
+
+function resetMapForm() {
+  mapEditing = null;
+  $('#map-form-title').textContent = '新增映射规则';
+  $('#map-keyword').value = '';
+  $('#map-muscle').value = '胸';
+  $('#map-cancel').classList.add('hidden');
+}
+
 /* ================= 课程记录 ================= */
 async function loadLessons() {
   const coachSel = $('#filter-coach');
@@ -562,4 +640,5 @@ $('#plans-save').addEventListener('click', async () => {
 loadCoaches().catch(err => toast('加载失败：' + err.message, false));
 loadEquips().catch(() => {});
 loadLessons().catch(() => {});
+loadMappings().catch(() => {});
 loadPlans().catch(err => toast('方案配置加载失败：' + err.message, false));

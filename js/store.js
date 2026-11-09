@@ -62,6 +62,11 @@
         return { title: p.title, main: p.main || '', sub: p.sub || '', icon: MINE_ICONS[p.title] || '' };
       }));
     }
+    if (Array.isArray(data.mappings) && Array.isArray(window.MUSCLE_RULES)) { // 动作→肌群映射（summary.js 消费）
+      replaceInPlace(window.MUSCLE_RULES, data.mappings.map(function (m) {
+        return { keyword: m.keyword || '', muscle: m.muscle || '' };
+      }).filter(function (m) { return m.keyword && m.muscle; }));
+    }
     window.dispatchEvent(new CustomEvent('appdata'));
     return true;
   }

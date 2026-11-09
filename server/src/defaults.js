@@ -3,7 +3,9 @@
    用途：
    ① 首次启动（数据库为空且无存量 data/*.json）时播种各集合；
    ② equipments 读取时缺 muscles/subMuscles 字段 → 按内置默认表补全（幂等写回）。
-   数据来源：gym-app/serve.py DEFAULTS / EQUIP_MUSCLES / EQUIP_SUB */
+   数据来源：gym-app/serve.py DEFAULTS / EQUIP_MUSCLES / EQUIP_SUB
+   例外：mappings（动作→肌群映射规则）为后台配置化新增集合，关键词按数组顺序优先匹配，
+   与前端 summary.js 内置兜底规则语义一致（2026-11-09 新增，手工维护） */
 
 const EQUIP_MUSCLES = {
   "chest_press": [
@@ -358,6 +360,27 @@ const DEFAULTS = {
   ],
   "logs": [],
   "lessons": [],
+  "mappings": [
+    { "id": "map01", "keyword": "后束", "muscle": "肩" },
+    { "id": "map02", "keyword": "侧平举", "muscle": "肩" },
+    { "id": "map03", "keyword": "前平举", "muscle": "肩" },
+    { "id": "map04", "keyword": "推肩", "muscle": "肩" },
+    { "id": "map05", "keyword": "肩", "muscle": "肩" },
+    { "id": "map06", "keyword": "直臂", "muscle": "背" },
+    { "id": "map07", "keyword": "下拉", "muscle": "背" },
+    { "id": "map08", "keyword": "划船", "muscle": "背" },
+    { "id": "map09", "keyword": "背", "muscle": "背" },
+    { "id": "map10", "keyword": "腿", "muscle": "腿" },
+    { "id": "map11", "keyword": "深蹲", "muscle": "腿" },
+    { "id": "map12", "keyword": "髋", "muscle": "腿" },
+    { "id": "map13", "keyword": "三头", "muscle": "手臂" },
+    { "id": "map14", "keyword": "二头", "muscle": "手臂" },
+    { "id": "map15", "keyword": "弯举", "muscle": "手臂" },
+    { "id": "map16", "keyword": "下压", "muscle": "手臂" },
+    { "id": "map17", "keyword": "臂", "muscle": "手臂" },
+    { "id": "map18", "keyword": "夹胸", "muscle": "胸" },
+    { "id": "map19", "keyword": "胸", "muscle": "胸" }
+  ],
   "plans": [
     {
       "id": "back",

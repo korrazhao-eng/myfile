@@ -1,18 +1,18 @@
 # 健身器械助手 · 接口契约文档
 
-> 后端：`serve.py`（本地轻量模拟后端，JSON 文件存储）。真后端（Node/Java/云函数）对接时按本文档实现即可，前端无需改动。
-> 版本：V2（2026-11-03）· 对应前端 `feat/ui-redesign-v2`
+> 后端：`server/`（Node + Express + SQLite 生产级后端，`node server/src/index.js` 启动）。实现与本文档一致，前端无需改动。
+> 版本：V2.1（2026-11-09）· 新增 `mappings` 集合（动作→肌群映射）、`equipments.guide` 字段；V2（2026-11-03）对应 `feat/ui-redesign-v2`
 
 ## 1. 总览
 
 | 项 | 约定 |
 |---|---|
-| Base URL | `http://127.0.0.1:<port>`（启动：`python3 serve.py 8788`，默认 8787，仅监听 127.0.0.1） |
+| Base URL | `http://127.0.0.1:<port>`（启动：`node server/src/index.js`，默认端口 8080，可用 `PORT` 环境变量覆盖） |
 | 数据格式 | 请求/响应均为 UTF-8 JSON（代理接口透传上游格式） |
-| 鉴权 | 无（本地开发服务；生产化时需补 Token/Session） |
+| 鉴权 | 默认无（本地开发）；设置 `ADMIN_TOKEN` 后管理端集合写操作需 `X-Admin-Token` 头/同名 Cookie |
 | 缓存 | 所有响应带 `Cache-Control: no-cache, no-store, must-revalidate` |
-| 存储 | `data/<collection>.json`，线程锁保护，原子写入（tmp + replace） |
-| 初始化 | `data/` 缺文件时用内置默认值自动创建（与前端 `js/data.js` 回退值一致） |
+| 存储 | SQLite（`server/data/gym.db`，items 表按集合分键），WAL 日志模式 |
+| 初始化 | 首次启动：存量 `data/*.json` 自动导入（存在时）→ 空集合用内置默认值播种 |
 | 错误格式 | `{"error": "<原因>"}`，配 4xx 状态码 |
 
 ### 集合一览
@@ -20,18 +20,19 @@
 | 集合 | 用途 | GET | POST | PUT | DELETE |
 |---|---|---|---|---|---|
 | coaches | 教练管理 | 列表/单条 | 新增 | 按 id 更新 | 按 id 删除 |
-| equipments | 器械库+教程+发力肌群 | 列表/单条 | 新增 | 按 id 更新 | 按 id 删除 |
+| equipments | 器械库+教程+发力肌群+使用要点 | 列表/单条 | 新增 | 按 id 更新 | 按 id 删除 |
 | users | 用户档案（后台管理视图） | 列表/单条 | 新增 | 按 id 更新 | 按 id 删除 |
 | profile | 用户端「我的」页档案卡 | 列表 | — | **全量替换** | — |
 | plans | 训练方案配置（5 部位） | 列表 | — | **全量替换** | — |
 | logs | 训练日志（用户端上报） | 列表（可过滤） | **按 date upsert** | — | — |
 | lessons | 教练课预约（用户端上报） | 列表（可过滤） | **按 date upsert** | — | — |
+| mappings | 动作→肌群映射规则 | 列表/单条 | 新增 | 按 id 更新 | 按 id 删除 |
 | bootstrap | 启动聚合包 | 一次拉全 | — | — | — |
 
 通用规则：
-- 新增时后端自动生成 id：`uuid4().hex[:8]`（body 已带 id 则沿用）
+- 新增时后端自动生成 id：8 位十六进制（body 已带 id 则沿用）
 - PUT 需 URL 带 id（`/api/coaches/c1`），body 中 `id` 字段被忽略，其余字段**合并更新**
-- `coaches`/`equipments` POST 时 `name` 必填，否则 400
+- `coaches`/`equipments` POST 时 `name` 必填；`mappings` POST 时 `keyword` + `muscle` 必填，否则 400
 - `profile`/`plans` 仅接受 `PUT` + JSON 数组 body（全量替换），其他方法返回 405
 
 ---
@@ -69,6 +70,7 @@
 | videoUrl | string | 教程视频地址（详情页内播） |
 | videoJump | string | 小红书外链（「去小红书看」跳转） |
 | safety | string | 安全提示（详情页红调警示卡） |
+| guide | string | **使用要点**（详情页「使用要点」卡；留空不渲染该块） |
 | muscles | string[] | **主发力肌群**（中文名，详情页人体模型标红） |
 | subMuscles | string[] | **辅助发力肌群**（标橙；与 muscles 同名时自动去重） |
 
@@ -185,9 +187,28 @@
 - `POST /api/lessons`：按 `date` upsert（同日重复提交覆盖）
 - `GET /api/lessons`：全量；支持 `?date=`（按日）与 `?coach=`（按 `coachName` 精确匹配，可叠加）
 
-### 2.8 bootstrap（启动聚合）
+### 2.8 mappings（动作→肌群映射规则）
 
-`GET /api/bootstrap` → `{ "coaches": [...], "equipments": [...], "profile": [...] }`
+首页「最近运动」摘要卡（恢复/频率建议）按**动作名包含关键词**判定肌群；记录顺序即优先级，首个命中的关键词生效。全部未命中回退前端内置规则，再回退「全身」。
+
+```json
+{ "id": "map07", "keyword": "下拉", "muscle": "背" }
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| id | string | 自动 | |
+| keyword | string | ✔ | 动作名关键词（`includes` 子串匹配） |
+| muscle | string | ✔ | 肌群：胸/背/腿/肩/手臂/全身 |
+
+- 标准 CRUD 集合（POST/PUT/DELETE 需管理 Token）；`POST` 缺 `keyword`/`muscle` → 400
+- 调整优先级 = 交换相邻记录的 keyword/muscle（前端「上移」按钮封装此操作）
+- 首次启动播种 19 条默认规则（与前端 `js/summary.js` 内置兜底语义一致）
+- 用户端经 `bootstrap.mappings` 拉取；拉取失败回退 `js/summary.js` 内置规则
+
+### 2.9 bootstrap（启动聚合）
+
+`GET /api/bootstrap` → `{ "coaches": [...], "equipments": [...], "profile": [...], "mappings": [...] }`
 用户端首屏一次拉全，失败自动回退前端内置默认值（兼容 GitHub Pages 纯静态部署）。
 
 ---

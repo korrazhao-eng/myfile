@@ -11,7 +11,7 @@
 <header class="topbar">
   <span class="logo" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M7 8v8M17 8v8M4 10v4M20 10v4M7 12h10"/></svg></span>
   <h1>健身器械助手 · 管理后台</h1>
-  <span class="topbar-note">数据存储：gym-app/data/*.json（本地轻量模拟后端）· 用户端改动自动同步</span>
+  <span class="topbar-note">数据存储：SQLite（server/data/gym.db）· 用户端改动自动同步</span>
 </header>
 
 <nav class="tabs" id="tabs">
@@ -20,6 +20,7 @@
   <button class="tab" data-pane="profile" type="button">用户数据</button>
   <button class="tab" data-pane="lessons" type="button">课程记录</button>
   <button class="tab" data-pane="plans" type="button">方案配置</button>
+  <button class="tab" data-pane="mappings" type="button">肌群映射</button>
 </nav>
 
 <main>
@@ -61,6 +62,9 @@
         <label>发力肌群<input id="equip-muscles" type="text" placeholder="主发力，逗号分隔（详情页标红）"/></label>
         <label>辅助发力<input id="equip-sub" type="text" placeholder="辅助肌群，逗号分隔（详情页标橙）"/></label>
         <label class="grow">安全提示<input id="equip-safety" type="text" placeholder="加片之前先加控制，冲重量之前先问教练"/></label>
+      </div>
+      <div class="form-row">
+        <label class="grow">使用要点<textarea id="equip-guide" rows="2" placeholder="器械使用方法与要点；留空则详情页不展示该块"></textarea></label>
       </div>
       <div class="form-actions">
         <button class="btn primary" id="equip-save" type="button">保存</button>
@@ -146,16 +150,41 @@
       <span class="note">保存后用户端「选部位 → 生成今日方案」即按新配置执行；未配置的部位沿用内置模板</span>
     </div>
   </section>
+  <!-- 肌群映射（动作关键词 → 肌群，摘要卡恢复建议用） -->
+  <section class="pane hidden" id="pane-mappings">
+    <div class="pane-head"><h2>动作 → 肌群映射规则</h2><span class="note">首页「最近运动」摘要卡按动作名关键词判定肌群 · 顺序即优先级，靠前先命中</span></div>
+    <table class="tbl"><thead><tr><th style="width:60px">优先级</th><th>动作关键词</th><th style="width:120px">归属肌群</th><th class="w-op">操作</th></tr></thead>
+      <tbody id="map-tbody"><tr><td colspan="4" class="empty">加载中…</td></tr></tbody></table>
+    <div class="form-card">
+      <h3 id="map-form-title">新增映射规则</h3>
+      <div class="form-row">
+        <label>动作关键词<input id="map-keyword" type="text" placeholder="动作名包含即命中，如：下拉"/></label>
+        <label>归属肌群<select id="map-muscle">
+          <option>胸</option><option>背</option><option>腿</option>
+          <option>肩</option><option>手臂</option><option>全身</option>
+        </select></label>
+      </div>
+      <div class="note">用户端按本表顺序匹配动作名，首个命中的关键词生效；全部未命中回退「全身」与前端内置规则。修改保存后用户端刷新首页摘要即生效</div>
+      <div class="form-actions">
+        <button class="btn primary" id="map-save" type="button">保存</button>
+        <button class="btn hidden" id="map-cancel" type="button">取消编辑</button>
+      </div>
+    </div>
+  </section>
 </main>
 
 <footer class="data-bar">
   <span class="data-chips">
-    <i class="chip">coaches.json</i>
-    <i class="chip">equipments.json</i>
-    <i class="chip">users.json</i>
-    <i class="chip">lessons.json</i>
+    <i class="chip">coaches</i>
+    <i class="chip">equipments</i>
+    <i class="chip">users</i>
+    <i class="chip">lessons</i>
+    <i class="chip">logs</i>
+    <i class="chip">profile</i>
+    <i class="chip">plans</i>
+    <i class="chip">mappings</i>
   </span>
-  <span class="data-note">本地轻量模拟后端 · 用户端改动自动同步</span>
+  <span class="data-note">Node + SQLite 后端（server/）· 用户端改动自动同步</span>
 </footer>
 
 <div id="admin-toast" class="hidden"></div>

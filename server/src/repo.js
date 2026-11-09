@@ -10,16 +10,16 @@ const crypto = require('crypto');
 const db = require('./db');
 const { EQUIP_MUSCLES, EQUIP_SUB } = require('./defaults');
 
-/* 契约中的 7 个集合 + bootstrap 聚合 */
-const COLLECTIONS = ['coaches', 'equipments', 'profile', 'users', 'logs', 'lessons', 'plans'];
+/* 契约中的 8 个集合 + bootstrap 聚合 */
+const COLLECTIONS = ['coaches', 'equipments', 'profile', 'users', 'logs', 'lessons', 'plans', 'mappings'];
 /* 有 id 的 CRUD 集合（GET 单条 / PUT / DELETE 走 id） */
-const ID_COLLECTIONS = ['coaches', 'equipments', 'users'];
+const ID_COLLECTIONS = ['coaches', 'equipments', 'users', 'mappings'];
 /* 仅支持 PUT + 数组 body 的全量替换集合 */
 const FULL_REPLACE_ONLY = ['profile', 'plans'];
 /* POST 按 date upsert 的上报集合 */
 const DATE_UPSERT = ['logs', 'lessons'];
 /* 管理端管理的集合（写操作需 ADMIN_TOKEN）；logs/lessons 为用户端上报，保持开放 */
-const ADMIN_MANAGED = ['coaches', 'equipments', 'users', 'profile', 'plans'];
+const ADMIN_MANAGED = ['coaches', 'equipments', 'users', 'profile', 'plans', 'mappings'];
 
 const isCollection = (name) => COLLECTIONS.includes(name);
 
