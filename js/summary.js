@@ -14,8 +14,6 @@
 'use strict';
 
 const LS_SUM_AI = 'gym_sum_ai_';       // AI 文案当日缓存 key 前缀（+YYYY-MM-DD）
-const LS_CHK_REF = 'gym_chk_';         // 与 app.js LS_CHK 一致（避免加载顺序依赖）
-const LS_RESV_REF = 'gym_resv_';       // 与 app.js LS_RESV 一致
 const SUM_LLM_MODEL = 'glm-4-flash';
 const SUM_AI_TIMEOUT = 15000;          // AI 超时毫秒数（实测 glm-4-flash 常态 5~8s），超时静默降级
 const SUM_AI_RETRY_GAP = 60000;        // AI 失败后的静默重试间隔
@@ -57,36 +55,14 @@ function muscleOf(action) {
 }
 
 /* 聚合全量训练数据：date -> {solo:[{action,sets,weight}], coach:{name,course}|null}
-   后台训练日志（window.LOG_DB，app.js 启动拉取 /api/logs）+ localStorage 真实记录（真实记录覆盖同日）
-   后台数据到达前回退 data.js 内置演示数据 */
+   M5：数据源改为「API 为主 + localStorage 缓存」——store.js 的 AppStore.gatherDays() 统一合并：
+     ① /api/logs + /api/lessons（主数据，管理员可维护）
+     ② localStorage gym_chk_ / gym_resv_（缓存与离线回退；上报失败的本地记录优先并自动补传）
+     ③ API 未到达时回退 data.js 内置演示数据
+   事实判定层仍在本地（规则引擎），AI 只改写文案 */
 function gatherAllDays() {
-  const map = {};
-  const src = window.LOG_DB || DEMO_LOG_DAYS;
-  for (const [date, m] of Object.entries(src)) {
-    map[date] = { solo: (m.solo || []).slice(), coach: m.coach || null };
-  }
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (!key) continue;
-    try {
-      if (key.startsWith(LS_CHK_REF)) {
-        const ex = JSON.parse(localStorage.getItem(key));
-        const recs = Object.values((ex && ex.records) || {});
-        if (recs.length) {
-          const date = key.slice(LS_CHK_REF.length);
-          (map[date] = map[date] || { solo: [], coach: null })
-            .solo = recs.map(r => ({ action: r.action, sets: r.sets, weight: r.weight }));
-        }
-      } else if (key.startsWith(LS_RESV_REF)) {
-        const r = JSON.parse(localStorage.getItem(key));
-        if (r && r.coachName) {
-          const date = key.slice(LS_RESV_REF.length);
-          (map[date] = map[date] || { solo: [], coach: null }).coach = { name: r.coachName, course: r.course };
-        }
-      }
-    } catch {}
-  }
-  return map;
+  if (window.AppStore && AppStore.gatherDays) return AppStore.gatherDays();
+  return {};
 }
 
 /* 构建摘要数据：{count, feedback:[{state,action,date,cur,prev,delta,streak}], tips:[{kind,type,muscle,text}]} */
@@ -138,9 +114,9 @@ function buildSummary() {
     }
     fbPool.push(item);
   }
-  // 优先级 退步＞停滞＞进步＞首次记录；同优先级取最近训练日期
+  // 优先级 退步＞停滞＞进步＞首次记录；同优先级取最近训练日期（同一日期按录入顺序，需返回 0 否则排序结果不稳定）
   const PRI = { '退步': 0, '停滞': 1, '进步': 2, '首次记录': 3 };
-  fbPool.sort((a, b) => PRI[a.state] - PRI[b.state] || (a.date < b.date ? 1 : -1));
+  fbPool.sort((a, b) => PRI[a.state] - PRI[b.state] || (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
   const feedback = fbPool.slice(0, 2);
 
   // 频率与恢复建议（恢复类优先于练频率；恢复类之间：无休 > 同肌群）

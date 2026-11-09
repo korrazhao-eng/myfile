@@ -342,13 +342,24 @@ const WARMUP_TEXT = {
 const todayStr = () => { const d = new Date(); const p = n => String(n).padStart(2, '0'); return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()); };
 const getPlan = () => { try { return JSON.parse(localStorage.getItem(LS_PLAN + todayStr())); } catch (e) { return null; } };
 const savePlan = p => localStorage.setItem(LS_PLAN + todayStr(), JSON.stringify(p));
-/* 当日执行记录：{ startedAt, finishedAt, warmupDone, records: { 动作序号: { action, sets, weight } } } */
+/* 当日执行记录：{ startedAt, finishedAt, warmupDone, records: { 动作序号: { action, sets, weight } } }
+   M5：训练记录以 /api/logs 为主数据、localStorage 为缓存——
+        刷新后由 API 侧当日记录回填到方案动作（按动作名匹配，本地已有则以本地为准） */
 const emptyExec = () => ({ startedAt: null, finishedAt: null, warmupDone: false, records: {} });
 const getExec = () => {
-  try {
-    const v = JSON.parse(localStorage.getItem(LS_CHK + todayStr())) || {};
-    return { ...emptyExec(), ...v, records: v.records || {} };
-  } catch (e) { return emptyExec(); }
+  let v = {};
+  try { v = JSON.parse(localStorage.getItem(LS_CHK + todayStr())) || {}; } catch (e) { v = {}; }
+  const ex = { ...emptyExec(), ...v, records: { ...(v.records || {}) } };
+  const api = (window.AppStore && AppStore.getApiSolo) ? AppStore.getApiSolo(todayStr()) : null;
+  if (api && api.length) {
+    const plan = getPlan();
+    (plan ? plan.actions : []).forEach((a, i) => {
+      if (ex.records[i]) return;                       // 本地已录入 → 本地为准
+      const hit = api.find(r => r.action === a.action);
+      if (hit) ex.records[i] = { action: hit.action, sets: hit.sets, weight: hit.weight };
+    });
+  }
+  return ex;
 };
 const saveExec = ex => localStorage.setItem(LS_CHK + todayStr(), JSON.stringify(ex));
 const doneActions = ex => Object.keys(ex.records).length;
@@ -418,6 +429,7 @@ function generatePlan() {
     createdAt: Date.now()
   });
   localStorage.removeItem(LS_CHK + todayStr()); // 方案更新 → 当日执行记录重置
+  AppStore.deleteLog(todayStr());               // M5：同步清除后端当日日志（API 为主数据，失败静默）
   invalidateSummaryCache(); // 记录变化 → 最近运动 AI 文案缓存失效
   renderPlanPage();
   renderHomeCard();
@@ -541,8 +553,9 @@ function confirmRec() {
   ex.records[recIdx] = { action: a.action, sets: Number($('#rec-sets').value), weight: Number($('#rec-weight').value) };
   const allDone = plan.actions.length > 0 && doneActions(ex) >= plan.actions.length;
   if (allDone && !ex.finishedAt) ex.finishedAt = Date.now(); // 全部动作完成 = 今日训练完成
+  ex._synced = false;                     // 记录有变更 → 待上报（成功后由 store.js 标记已同步）
   saveExec(ex);
-  AppStore.report('logs', { // M4：训练日志上报后端（按天 upsert，失败静默）
+  AppStore.saveLog({                      // M5：训练日志上报后端（按天 upsert，失败静默 → 本地缓存兜底）
     date: todayStr(), type: 'solo',
     records: Object.values(ex.records).map(r => ({ action: r.action, sets: r.sets, weight: r.weight }))
   });
@@ -613,7 +626,19 @@ $('#btn-coach').addEventListener('click', () => { hideDoneModal(); openReserve('
 const LS_RESV = 'gym_resv_';
 let resvCoach = null, resvFrom = 'modal';
 
-const getResvToday = () => { try { return JSON.parse(localStorage.getItem(LS_RESV + todayStr())) || null; } catch { return null; } };
+/* M5：今日预约以 /api/lessons 为主数据、localStorage 为缓存（合并视图见 store.js） */
+const getResvToday = () => {
+  const d = (window.AppStore && AppStore.getDay) ? AppStore.getDay(todayStr()) : null;
+  return (d && d.coach) ? d.coach : null;
+};
+
+/* 两个 YYYY-MM-DD 之间的天数差（b - a，正数=未来，负数=过去） */
+const dayDiff = (a, b) => {
+  const pa = String(a).split('-').map(Number), pb = String(b).split('-').map(Number);
+  const ta = new Date(pa[0], pa[1] - 1, pa[2]).getTime();
+  const tb = new Date(pb[0], pb[1] - 1, pb[2]).getTime();
+  return Math.round((tb - ta) / 86400000);
+};
 
 /* 预约留资页：教练单选（选教练即启用提交） */
 function openReserve(from) {
@@ -640,17 +665,13 @@ $('#coach-list').addEventListener('click', e => {
   resvCoach = b.dataset.id; renderReserve();
 });
 
-/* 7 天内已有预约（无手机号可查，任何记录均算）则拦截重复提交 */
+/* 7 天内已有预约（无手机号可查，任何记录均算）则拦截重复提交
+   M5：以 API（/api/lessons）为准，本地缓存兜底；内置演示数据不计入拦截
+   age = 预约日期距今天的天数（过去为正、未来为负）；age < 7 即视为 7 天内 */
 function hasRecentResv() {
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (!key || !key.startsWith(LS_RESV)) continue;
-    try {
-      const r = JSON.parse(localStorage.getItem(key));
-      if (r && Date.now() - r.createdAt < 7 * 86400000) return true;
-    } catch {}
-  }
-  return false;
+  const days = (window.AppStore && AppStore.lessonDays) ? AppStore.lessonDays() : {};
+  const today = todayStr();
+  return Object.keys(days).some(d => dayDiff(d, today) < 7);
 }
 $('#btn-submit-resv').addEventListener('click', () => {
   if (!resvCoach) return;
@@ -658,9 +679,9 @@ $('#btn-submit-resv').addEventListener('click', () => {
   const coach = RESERVE_COACHES.find(c => c.id === resvCoach);
   localStorage.setItem(LS_RESV + todayStr(), JSON.stringify({
     coachName: coach.name, course: coach.course,
-    createdAt: Date.now(), rating: null, ratedAt: null
+    createdAt: Date.now(), rating: null, ratedAt: null, _synced: false
   }));
-  AppStore.report('lessons', { // M4：教练课预约上报后端（按天 upsert，失败静默）
+  AppStore.saveLesson({ // M5：教练课预约上报后端（按天 upsert，失败静默 → 本地缓存兜底）
     date: todayStr(), coachName: coach.name, course: coach.course, createdAt: Date.now()
   });
   invalidateSummaryCache(); // 教练课记录变化 → 最近运动 AI 文案缓存失效
@@ -704,8 +725,13 @@ $('#home-reserve-area').addEventListener('click', e => {
   if (e.target.closest('.coach-card')) { openReserve('home'); return; }
   const s = e.target.closest('.star'); if (!s) return;
   const rec = getResvToday(); if (!rec || rec.rating) return;
-  rec.rating = Number(s.dataset.n); rec.ratedAt = Date.now();
-  localStorage.setItem(LS_RESV + todayStr(), JSON.stringify(rec));
+  // 评分只存在于本地缓存（后端预约记录无评分字段）→ 回写时保留预约其余字段与同步标记
+  let local = {};
+  try { local = JSON.parse(localStorage.getItem(LS_RESV + todayStr())) || {}; } catch (err) { local = {}; }
+  local.coachName = rec.coachName; local.course = rec.course;
+  local.createdAt = local.createdAt || rec.createdAt || null;
+  local.rating = Number(s.dataset.n); local.ratedAt = Date.now();
+  localStorage.setItem(LS_RESV + todayStr(), JSON.stringify(local));
   showToast('评分已提交', 1600);
   renderHomeReserve();
 });
@@ -718,52 +744,10 @@ let calY = new Date().getFullYear(), calM = new Date().getMonth(); // 日历当�
 let selDate = null; // 当前展开详情的日期（YYYY-MM-DD）
 
 /* M5：后台训练日志（date -> {solo:[{action,sets,weight}], coach:{name,course}|null}）
-   到达前为 null（gatherLogDays/gatherAllDays 回退 data.js 内置演示数据），到达后日志页/摘要卡换源 */
-window.LOG_DB = null;
-function fetchLogs() {
-  fetch('/api/logs').then(r => { if (!r.ok) throw new Error(r.status); return r.json(); }).then(list => {
-    const db = {};
-    (Array.isArray(list) ? list : []).forEach(l => {
-      if (!l || !l.date) return;
-      if (l.type === 'coach') {
-        const r0 = (l.records || [])[0] || {};
-        db[l.date] = { solo: [], coach: { name: r0.coach || r0.action || '教练课', course: r0.course || '' } };
-      } else {
-        db[l.date] = { solo: (l.records || []).map(r => ({ action: r.action, sets: r.sets, weight: r.weight })), coach: null };
-      }
-    });
-    window.LOG_DB = db;
-    renderLog(); // 日志页若在当前 tab 即时刷新；切 tab 时也会重新渲染
-  }).catch(() => { /* 无后端环境：保留内置演示数据 */ });
-}
-
-function gatherLogDays() { // dateStr -> {solo:[{action,sets,weight}]|null, coach:{name,course}|null}；后台数据 + 真实记录合并（真实覆盖同日）
-  const map = {};
-  const src = window.LOG_DB || DEMO_LOG_DAYS; // 后台数据到达前回退内置演示
-  for (const [date, m] of Object.entries(src)) {
-    map[date] = { solo: m.solo || null, coach: m.coach || null };
-  }
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (!key) continue;
-    if (key.startsWith(LS_CHK)) {
-      const date = key.slice(LS_CHK.length);
-      try {
-        const ex = JSON.parse(localStorage.getItem(key));
-        const recs = Object.values((ex && ex.records) || {});
-        if (recs.length) {
-          (map[date] = map[date] || {}).solo = recs.map(r => ({ action: r.action, sets: r.sets, weight: r.weight }));
-        }
-      } catch {}
-    } else if (key.startsWith(LS_RESV)) {
-      const date = key.slice(LS_RESV.length);
-      try {
-        const r = JSON.parse(localStorage.getItem(key));
-        if (r) (map[date] = map[date] || {}).coach = { name: r.coachName, course: r.course };
-      } catch {}
-    }
-  }
-  return map;
+   以 /api/logs 为主数据，localStorage 作缓存与离线回退；归一化与合并在 store.js 完成
+   （window.LOG_DB 未到达前回退 data.js 内置演示数据） */
+function gatherLogDays() { // dateStr -> {solo:[{action,sets,weight}]|null, coach:{name,course}|null}
+  return (window.AppStore && AppStore.gatherDays) ? AppStore.gatherDays() : {};
 }
 
 /* 当日详情：自由训练明细列表 + 教练信息卡片（复用预约页 .coach-card 样式）；两类并存上下都展示 */
@@ -878,7 +862,7 @@ renderMine();
 $('#mine-body').addEventListener('click', e => {
   const b = e.target.closest('.me-item'); if (!b) return;
   const m = MINE_DATA.find(x => x.title === b.dataset.title);
-  showToast(m.main + (m.sub ? ' · ' + m.sub : ''), 2000);
+  showToast(fmtCnDate(m.main) + (m.sub ? ' · ' + fmtCnDate(m.sub) : ''), 2000);
 });
 
 /* M4：后端配置到达后刷新依赖配置的已渲染视图（store.js 派发 appdata 事件） */
@@ -886,6 +870,8 @@ window.addEventListener('appdata', () => {
   renderMine();
   renderHomeReserve(); renderHomeCard();
   renderEquipGroups($('#list-body'), $('#list-search').value || '');
+  renderLog();     // M5：训练日志 / 教练课预约以 API 为主 → 到达后刷新日志页
+  renderSummary(); // M5：摘要卡同源刷新（AI 文案按事实指纹命中缓存，不会重复请求）
 });
 
 /* ---------- 启动：默认落首页 Tab ---------- */
@@ -916,7 +902,8 @@ fitPhone();
 
 AppStore.init(); // M4：拉取后端配置（教练/器械/档案），到达后经 appdata 事件刷新视图；失败回退内置默认值
 fetchPlans(); // M5：拉取后台「方案配置」（/api/plans），生成今日方案时优先使用；失败回退内置模板
-fetchLogs(); // M5：拉取后台「训练日志」（/api/logs），日志页/摘要卡历史数据改为后台可配置；失败回退内置演示数据
+AppStore.fetchLogs();     // M5：拉取「训练日志」（/api/logs）——训练记录主数据源
+AppStore.fetchLessons();  // M5：拉取「教练课预约」（/api/lessons）——预约主数据源
 
 renderEquipGroups($('#list-body'), ''); // 识别 Tab·列表子 Tab 初始数据
 showTab('home');

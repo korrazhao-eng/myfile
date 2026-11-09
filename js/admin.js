@@ -203,6 +203,9 @@ const nowStamp = () => {
 /* 数值展示：保留一位小数（体重 kg / 体脂率 %），空值返回空串 */
 const fmt1 = v => (v === '' || v == null) ? '' : Number(v).toFixed(1);
 
+/* 有效期类日期展示层统一 YYYY-MM-DD：「2027 年 10 月 11 日」→「2027-10-11」（不改原始数据源） */
+const fmtCnDate = s => String(s == null ? '' : s).replace(/(\d{4}) 年 (\d{1,2}) 月 (\d{1,2}) 日/g, (_, y, mo, d) => `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`);
+
 async function loadUsers() {
   const [list, coaches] = await Promise.all([getList('users'), getList('coaches')]);
   const coachSel = $('#user-coach');
@@ -226,7 +229,7 @@ async function loadUsers() {
       <td class="cell-ellipsis" title="${esc(profileText)}">${esc(profileText) || '—'}</td>
       <td>${esc(u.visitAt || '—')}</td>
       <td>${esc(u.coach || '—')}</td>
-      <td class="cell-ellipsis" title="${esc(u.contract || '')}">${esc(u.contract || '—')}</td>
+      <td class="cell-ellipsis" title="${esc(fmtCnDate(u.contract || ''))}">${esc(fmtCnDate(u.contract || '—'))}</td>
       <td class="cell-ellipsis" title="${esc(u.leave || '')}">${esc(u.leave || '—')}</td>
       <td class="w-op">
         <button class="btn mini" data-view="${u.id}" type="button">${open ? '收起' : '查看'}</button>
@@ -240,7 +243,7 @@ async function loadUsers() {
         <span><i>最近来访</i>${esc(u.visitAt || '—')}</span>
         <span><i>心率记录</i>${esc((u.heart ?? '') !== '' ? `${u.heart} 次/分（记录于 ${u.heartAt || '—'}）` : '—')}</span>
         <span><i>体测记录</i>${esc(hasBody ? `体重 ${fmt1(u.weight) || '—'}kg／体脂 ${fmt1(u.fatRate) || '—'}%（记录于 ${u.bodyAt || '—'}）` : '—')}</span>
-        <span><i>合同记录</i>${esc(u.contract || '—')}</span>
+        <span><i>合同记录</i>${esc(fmtCnDate(u.contract || '—'))}</span>
         <span><i>请假记录</i>${esc(u.leave || '—')}</span>
       </div>
     </td></tr>` : ''}`;
