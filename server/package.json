@@ -12,6 +12,11 @@
     "dev": "node --watch src/index.js",
     "migrate": "node scripts/migrate.js",
     "smoke": "bash smoke.sh",
+    "test": "bash tests/run-all.sh",
+    "test:difftest": "node tests/difftest.js",
+    "test:store": "node tests/store-test.js",
+    "test:e2e": "node tests/e2e-test.js",
+    "test:dom": "node tests/dom-test.js",
     "check:driver": "node scripts/probe-driver.js && echo 'better-sqlite3 可用' || echo 'better-sqlite3 不可用，将回退 node:sqlite'"
   },
   "dependencies": {
