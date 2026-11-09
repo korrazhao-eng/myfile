@@ -20,7 +20,7 @@
 ## 0. 环境与代码位置
 
 - 项目路径：`/Users/zhao/Downloads/trae/product_manager/gym-app`
-- 远端仓库：`korrazhao-eng/myfile`，分支 `main`，HEAD = `141652a`
+- 远端仓库：`korrazhao-eng/myfile`，分支 `main`，HEAD = `3ff60c8`
 - 运行时：本机 `node` v22.22.2，`python3` 3.13.12
 - 网络：存在 `HTTP_PROXY` 环境变量，**访问本机必须加 `--noproxy '*'`**
 
