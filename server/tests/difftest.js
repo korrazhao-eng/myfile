@@ -33,34 +33,83 @@ const norm = (s) => {
 };
 
 /* ---------------------------------------------------------------------------
- * 向后兼容扩展白名单
- * 新后端允许比旧 serve.py 多返回这些顶层键（契约 V2.1 新增集合，serve.py 无对应实现）。
- * 判定规则：旧响应里的每个键必须在新响应中**存在且逐字节一致**；新响应多出来的键允许存在。
+ * 兼容性判定规则：递归「子集」比较
+ *
+ * 语义：新后端必须提供旧后端提供的**全部数据**（不得丢失、不得改值），
+ *       但**允许新增**字段 / 键 / 记录 —— 这就是「向前兼容扩展」。
+ *
+ * 举例：
+ *   · bootstrap 多一个 mappings 键            → 允许（扩展）
+ *   · users 记录多 memberNo / memberLevel 字段 → 允许（扩展）
+ *   · 旧有字段值变了 / 旧字段消失了 / 记录少了  → 判为不一致（真回归）
+ *
  * 这样既保证「旧契约字段零回归」，又允许新契约的向前扩展。
  * ------------------------------------------------------------------------- */
-const EXTRA_TOP_KEYS_ALLOWED = ['mappings'];
+
+function compareValue(oldVal, newVal, path, ext) {
+  const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);
+  const isArr = (v) => Array.isArray(v);
+
+  if (oldVal === null || newVal === null || typeof oldVal !== 'object' || typeof newVal !== 'object') {
+    /* 基本类型：必须严格相等 */
+    if (oldVal === newVal) return { ok: true };
+    return { ok: false, reason: `${path}：旧值 ${JSON.stringify(oldVal)} ≠ 新值 ${JSON.stringify(newVal)}` };
+  }
+
+  if (isObj(oldVal) && isObj(newVal)) {
+    for (const k of Object.keys(oldVal)) {
+      if (!(k in newVal)) {
+        return { ok: false, reason: `${path}.${k}：旧响应有此字段，新响应缺失` };
+      }
+      const r = compareValue(oldVal[k], newVal[k], `${path}.${k}`, ext);
+      if (!r.ok) return r;
+    }
+    for (const k of Object.keys(newVal)) {
+      if (!(k in oldVal)) ext.push(`${path}.${k}`);
+    }
+    return { ok: true };
+  }
+
+  if (isArr(oldVal) && isArr(newVal)) {
+    if (newVal.length < oldVal.length) {
+      return { ok: false, reason: `${path}：旧响应 ${oldVal.length} 条，新响应仅 ${newVal.length} 条（记录丢失）` };
+    }
+    /* 优先按 id 配对；无 id 则按下标配对 */
+    const hasId = oldVal.length > 0 && oldVal.every((x) => x && typeof x === 'object' && 'id' in x);
+    for (let i = 0; i < oldVal.length; i++) {
+      let counterpart = null;
+      let idx = i;
+      if (hasId) {
+        idx = newVal.findIndex((x) => x && x.id === oldVal[i].id);
+        if (idx === -1) {
+          return { ok: false, reason: `${path}：旧记录 id=${oldVal[i].id} 在新响应中不存在` };
+        }
+        counterpart = newVal[idx];
+      } else {
+        counterpart = newVal[i];
+      }
+      const r = compareValue(oldVal[i], counterpart, `${path}[${hasId ? 'id=' + oldVal[i].id : i}]`, ext);
+      if (!r.ok) return r;
+    }
+    for (let i = oldVal.length; i < newVal.length; i++) ext.push(`${path}[${i}]`);
+    return { ok: true };
+  }
+
+  /* 类型不同（如旧为对象新为数组）→ 不一致 */
+  return { ok: false, reason: `${path}：结构类型不一致（旧 ${Array.isArray(oldVal) ? '数组' : typeof oldVal}，新 ${Array.isArray(newVal) ? '数组' : typeof newVal}）` };
+}
 
 function compareBodies(oldText, newText) {
-  const o = JSON.parse(oldText);
-  const n = JSON.parse(newText);
-  if (!o || typeof o !== 'object' || Array.isArray(o) || !n || typeof n !== 'object' || Array.isArray(n)) {
-    /* 非对象响应（数组 / 标量）→ 直接整体比较 */
-    return { same: o === n, detail: '' };
-  }
-  for (const k of Object.keys(o)) {
-    if (!(k in n)) {
-      return { same: false, detail: `旧响应的键 "${k}" 在新响应中缺失` };
-    }
-    if (JSON.stringify(o[k]) !== JSON.stringify(n[k])) {
-      return { same: false, detail: `键 "${k}" 内容不一致` };
-    }
-  }
-  const extra = Object.keys(n).filter((k) => !(k in o));
-  const badExtra = extra.filter((k) => !EXTRA_TOP_KEYS_ALLOWED.includes(k));
-  if (badExtra.length) {
-    return { same: false, detail: `新响应出现未登记的新增键：${badExtra.join(', ')}` };
-  }
-  return { same: true, detail: extra.length ? `（新响应额外含向后兼容键：${extra.join(', ')}）` : '' };
+  let o, n;
+  try { o = JSON.parse(oldText); n = JSON.parse(newText); }
+  catch (e) { return { same: false, detail: '响应不是合法 JSON' }; }
+  const ext = [];
+  const r = compareValue(o, n, '$', ext);
+  if (!r.ok) return { same: false, detail: r.reason };
+  return {
+    same: true,
+    detail: ext.length ? `（新响应额外含向前兼容扩展：${ext.slice(0, 6).join(', ')}${ext.length > 6 ? ' 等' : ''}）` : '',
+  };
 }
 
 async function hit(base, method, p, body) {
@@ -204,9 +253,16 @@ async function startOld() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gym-diff-old-'));
   tmpDirs.push(dir);
   /* serve.py 把数据写在自己 ROOT/data 下，无法通过参数改目录；
-     为避免污染仓库里的 data/，复制一份 serve.py + data/ 到临时目录再启动。 */
+     为避免污染仓库里的 data/，复制一份 serve.py + data/ 到临时目录再启动。
+     注意：data/ 被 .gitignore 忽略，干净克隆里可能不存在 ——
+     此时不复制，让 serve.py 用内置默认值初始化（新后端同样是空库播种默认值，两边仍可比）。 */
   fs.copyFileSync(path.join(ROOT, 'serve.py'), path.join(dir, 'serve.py'));
-  fs.cpSync(path.join(ROOT, 'data'), path.join(dir, 'data'), { recursive: true });
+  const srcData = path.join(ROOT, 'data');
+  if (fs.existsSync(srcData)) {
+    fs.cpSync(srcData, path.join(dir, 'data'), { recursive: true });
+  } else {
+    console.log('  （提示：仓库无 data/ 目录，serve.py 将使用内置默认值初始化）');
+  }
   const child = spawn('python3', [path.join(dir, 'serve.py'), String(OLD_PORT)], { stdio: 'ignore' });
   children.push(child);
   return `http://127.0.0.1:${OLD_PORT}`;
