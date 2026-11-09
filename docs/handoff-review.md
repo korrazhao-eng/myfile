@@ -380,6 +380,31 @@ open http://127.0.0.1:8080/admin.html
 
 已实测：`better-sqlite3` 与 `node:sqlite` **两条路径下五套测试均全绿**。
 
+### 5.8 鉴权的两处已知弱点（复核时建议重点评估）⚠️
+
+本节为编写复核提示词时**新发现**，此前未在文档中列出。
+
+**① `ADMIN_TOKEN` 为空时鉴权整体关闭**
+
+`server/src/auth.js:34` 的 `enabled()` 返回 `false` → `requireAdmin` 直接放行 →
+**所有管理端写接口裸奔**。这是为了让本地开发零配置，但意味着：
+
+> 生产部署若遗漏该环境变量，系统会**静默地**以无鉴权模式运行，不会有任何告警。
+
+`server/README.md` §环境变量 已列出 `ADMIN_TOKEN`，但**未标明「生产环境必须配置」**。
+建议：启动时若检测到 `NODE_ENV=production` 且 `ADMIN_TOKEN` 为空，打印醒目错误并拒绝启动。
+
+**② Token 可通过 query 参数传递**
+
+`server/src/auth.js:29` 的 `extractToken()` 除了 `X-Admin-Token` 头和 Cookie，
+还兜底接受 `?admin_token=` query 参数。这便于 curl 调试，但会带来：
+
+- 密钥进入浏览器历史 / Referer 头
+- 密钥进入反向代理与 Web 服务器的访问日志
+- 密钥可能出现在截图、监控埋点里
+
+建议：生产环境禁用 query 参数通道（仅保留头 + Cookie），或至少在 README 中标注。
+
 ---
 
 ## 6. 文件清单速查
