@@ -77,7 +77,17 @@ function createApp() {
   // ⑥ 上游透传代理（百度识图 / 兼容旧 /proxy/llm）
   app.use('/proxy', proxyRouter);
 
-  // ⑦ 静态托管（index.html / admin.html / js / css / icons）
+  // ⑦ 私有配置保护：*.local.js 只允许本机回环访问
+  //    该文件会被 index.html 直接 <script> 加载，但绝不能被局域网/公网取走（内含 Key）
+  app.use((req, res, next) => {
+    if (!/\.local\.js$/i.test(req.path)) return next();
+    const remote = ((req.socket && req.socket.remoteAddress) || '').replace(/^::ffff:/, '');
+    // 无地址（unix socket）视为本机；仅放行 IPv4/IPv6 回环
+    if (!remote || remote === '127.0.0.1' || remote === '::1') return next();
+    return sendError(res, 403, 'forbidden');
+  });
+
+  // ⑧ 静态托管（index.html / admin.html / js / css / icons）
   app.use(
     express.static(config.STATIC_ROOT, {
       index: 'index.html',
@@ -88,10 +98,10 @@ function createApp() {
     })
   );
 
-  // ⑧ 兜底 404（契约：未知集合 / id 不存在 / 静态 404 统一 404 + {"error":...}）
+  // ⑨ 兜底 404（契约：未知集合 / id 不存在 / 静态 404 统一 404 + {"error":...}）
   app.use((req, res) => sendError(res, 404, 'not found'));
 
-  // ⑨ 错误处理（含 body 解析失败 / 请求体超限）
+  // ⑩ 错误处理（含 body 解析失败 / 请求体超限）
   app.use((err, req, res, next) => {
     if (res.headersSent) return next(err);
     const status = err.status || err.statusCode || 500;

@@ -231,6 +231,7 @@
 | 200 | 成功 |
 | 400 | body 非 JSON / POST 缺 `name` / `messages` 不合法 / `model` 不在白名单 |
 | 401 | 开启 `LLM_REQUIRE_ADMIN=1` 时 `/api/llm/summary` 缺少或错误的管理端 Token |
+| 403 | 非本机回环访问静态目录下的 `*.local.js`（私有配置不下发外网） |
 | 404 | 未知集合 / id 不存在 / 静态 404 |
 | 405 | profile、plans 用了非 PUT；PUT/DELETE 缺 id |
 | 429 | `/api/llm/summary` 触发频控（默认每 IP 10 次/分钟，响应带 `Retry-After: 60`） |
