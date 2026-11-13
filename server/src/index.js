@@ -1,12 +1,45 @@
 'use strict';
 /* 服务入口：初始化数据库 → 首次启动导入存量数据/播种默认值 → 启动 HTTP 服务 */
 
+const fs = require('fs');
+const path = require('path');
+
 const config = require('./config');
 const db = require('./db');
 const repo = require('./repo');
 const { DEFAULTS } = require('./defaults');
 const { importLegacy, isDbEmpty } = require('./importer');
 const { createApp } = require('./app');
+
+/** 去掉 JS 注释，避免把注释里的警示文案误判为真实 Key */
+function stripComments(text) {
+  return text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+}
+
+/** 启动自检：静态目录里不允许残留前端 LLM Key（否则会被公开下发并视为泄露） */
+function checkFrontendSecrets() {
+  const dir = path.join(config.STATIC_ROOT, 'js');
+  let files = [];
+  try {
+    files = fs.readdirSync(dir).filter((n) => n.endsWith('.local.js'));
+  } catch (e) {
+    return; // 静态目录不存在不算错误
+  }
+  for (const name of files) {
+    try {
+      const text = stripComments(fs.readFileSync(path.join(dir, name), 'utf8'));
+      // 命中：LLM_KEYS / ZHIPU_API_KEY 字段，或智谱 Key 格式（32 位十六进制 + . + 16 位）
+      if (/LLM_KEYS|ZHIPU_API_KEY/.test(text) || /[0-9a-f]{32}\.[A-Za-z0-9]{16}/i.test(text)) {
+        console.warn(
+          `[security] ${path.join(dir, name)} 仍含前端 LLM Key，静态托管会公开下发；` +
+            '请删除该字段并轮换 Key（见 docs/handoff-review.md 复核项 S-1）'
+        );
+      }
+    } catch (e) {
+      // 读不到就跳过，不阻塞启动
+    }
+  }
+}
 
 function bootstrapData() {
   // ① 库完全为空 → 首次启动：自动导入存量 data/*.json（幂等，导入后库非空，不会重复导入）
@@ -25,6 +58,7 @@ function bootstrapData() {
 }
 
 function main() {
+  checkFrontendSecrets();
   try {
     db.open();
   } catch (e) {

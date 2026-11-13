@@ -229,9 +229,11 @@
 | 码 | 场景 |
 |---|---|
 | 200 | 成功 |
-| 400 | body 非 JSON / POST 缺 `name` |
+| 400 | body 非 JSON / POST 缺 `name` / `messages` 不合法 / `model` 不在白名单 |
+| 401 | 开启 `LLM_REQUIRE_ADMIN=1` 时 `/api/llm/summary` 缺少或错误的管理端 Token |
 | 404 | 未知集合 / id 不存在 / 静态 404 |
 | 405 | profile、plans 用了非 PUT；PUT/DELETE 缺 id |
+| 429 | `/api/llm/summary` 触发频控（默认每 IP 10 次/分钟，响应带 `Retry-After: 60`） |
 | 502 | 代理上游网络异常 |
 
 ## 5. 真后端对接清单（迁移时需实现）
@@ -239,4 +241,4 @@
 1. 上表 8 组路由 + 语义（尤其：logs/lessons 按 date upsert、profile/plans 仅 PUT 全量、equipments 缺字段补全）
 2. 响应结构与字段名与本文档完全一致（前端零改动）
 3. 鉴权与多用户隔离（当前单用户本地形态）
-4. AI Key 下沉服务端（前端 `config.local.js` 的 Key 仅本地开发用）
+4. AI Key 下沉服务端（前端 `config.local.js` 只允许放百度识别 Key，**禁止**出现智谱/LLM Key）
